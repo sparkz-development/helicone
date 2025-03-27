@@ -10,6 +10,33 @@ The sync script is designed to:
 2. Remove any potential secrets or sensitive information during the sync
 3. Commit and push changes to the target repository
 
+## Process Flow
+
+```mermaid
+flowchart TD
+    A[Start] --> B[Create temporary directory]
+    B --> C[Check/add remote for target repo]
+    C --> D[Clone target repository]
+    D --> E{PACKAGES_TO_SYNC env var set?}
+    E -->|Yes| F[Use packages from env var]
+    E -->|No| G[Use default packages]
+    F --> H[Copy packages to temp dir]
+    G --> H
+    H --> I[Remove .env files]
+    I --> J[Sanitize config files]
+    J --> K[Remove potential API keys]
+    K --> L[Copy configuration files]
+    L --> M[Commit changes]
+    M --> N[Push to target repo]
+    N --> O[Clean up temp directory]
+    O --> P[End]
+
+    style A fill:#98FB98,stroke:#006400,stroke-width:2px
+    style P fill:#FFB6C1,stroke:#8B0000,stroke-width:2px
+    style E fill:#FFFACD,stroke:#DAA520,stroke-width:2px
+    style N fill:#ADD8E6,stroke:#4682B4,stroke-width:2px
+```
+
 ## Prerequisites
 
 - Git command line tools
