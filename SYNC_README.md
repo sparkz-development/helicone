@@ -54,13 +54,6 @@ flowchart LR
     D -->|Success| E([Done])
     D -->|Errors| F[Resolve issues]
     F --> C
-    
-    style A fill:#00CC00,stroke:#006600,stroke-width:3px,color:white,font-weight:bold
-    style E fill:#FF3366,stroke:#990033,stroke-width:3px,color:white,font-weight:bold
-    style B fill:#3399FF,stroke:#0066CC,stroke-width:2px,color:white
-    style C fill:#3399FF,stroke:#0066CC,stroke-width:2px,color:white
-    style D fill:#FFCC00,stroke:#FF9900,stroke-width:2px
-    style F fill:#FF6633,stroke:#CC3300,stroke-width:2px,color:white
 ```
 
 ## Troubleshooting
