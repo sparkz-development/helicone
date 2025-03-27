@@ -3,29 +3,6 @@ set -e  # Exit on any error
 
 echo "Starting safe synchronization process..."
 
-# Step 1: Update local Helicone fork from upstream
-echo "Updating Helicone fork from upstream..."
-
-# Check if upstream remote exists, add if it doesn't
-if ! git remote | grep -q "upstream"; then
-  echo "Adding upstream remote..."
-  git remote add upstream https://github.com/helicone/helicone.git
-fi
-
-# Fetch and merge changes from upstream
-echo "Fetching from upstream..."
-git fetch upstream
-
-echo "Merging upstream changes..."
-git merge upstream/main
-
-echo "Pushing changes to your fork..."
-git push origin main
-
-echo "Helicone fork updated successfully!"
-
-# Step 2: Sync packages to AI Cost Calculator
-
 # Create a temporary directory for the sync
 TEMP_DIR=$(mktemp -d)
 echo "Created temporary directory: $TEMP_DIR"
@@ -71,17 +48,18 @@ done
 
 # Also copy necessary configuration files from the packages root
 echo "Copying package configuration files..."
-cp "packages/package.json" "$TEMP_DIR/target/packages/" 2>/dev/null || echo "package.json not found"
-cp "packages/package-lock.json" "$TEMP_DIR/target/packages/" 2>/dev/null || echo "package-lock.json not found"
-cp "packages/tsconfig.json" "$TEMP_DIR/target/packages/" 2>/dev/null || echo "tsconfig.json not found"
-cp "packages/README.md" "$TEMP_DIR/target/packages/" 2>/dev/null || echo "README.md not found"
+cp -r package.json tsconfig.json "$TEMP_DIR/target/"
 
-# Commit and push changes in the target repo
+# Commit and push changes
 echo "Committing and pushing changes..."
 cd "$TEMP_DIR/target"
 git add .
-git commit -m "Sync selected packages from helicone repo" || echo "No changes to commit"
-git push origin main || echo "Push failed - you may need to resolve conflicts manually"
+git diff-index --quiet HEAD || git commit -m "Sync packages from Helicone ($(date +%Y-%m-%d))"
+if [ $? -eq 0 ]; then
+  git push origin main
+else
+  echo "No changes to commit"
+fi
 
 # Clean up
 echo "Cleaning up temporary directory..."
