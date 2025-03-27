@@ -28,10 +28,10 @@ flowchart LR
     J --> B
     end
     
-    subgraph "Execution Examples"
-    K[Run standard sync<br>./sync_with_helicone.sh]
-    L[Sync specific packages<br>PACKAGES_TO_SYNC="cost" ./sync_with_helicone.sh]
-    M[Sync multiple packages<br>PACKAGES_TO_SYNC="cost llm-mapper" ./sync_with_helicone.sh]
+    subgraph "Example Commands"
+    K[Standard sync]
+    L[Single package sync]
+    M[Multiple package sync]
     end
 
     style A fill:#98FB98,stroke:#006400,stroke-width:2px
@@ -41,6 +41,19 @@ flowchart LR
     style K fill:#E6F7FF,stroke:#1890FF,stroke-width:2px
     style L fill:#E6F7FF,stroke:#1890FF,stroke-width:2px
     style M fill:#E6F7FF,stroke:#1890FF,stroke-width:2px
+```
+
+### Example Commands:
+
+```bash
+# Standard sync (default packages: cost and llm-mapper)
+./sync_with_helicone.sh
+
+# Sync a single package
+PACKAGES_TO_SYNC="cost" ./sync_with_helicone.sh
+
+# Sync multiple packages
+PACKAGES_TO_SYNC="cost llm-mapper" ./sync_with_helicone.sh
 ```
 
 ## Prerequisites
