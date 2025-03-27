@@ -20,10 +20,19 @@ git clone git@github.com:sparkz-development/ai-cost-calcultator.git "$TEMP_DIR/t
 echo "Copying necessary packages..."
 mkdir -p "$TEMP_DIR/target/packages"
 
-# List the specific packages to sync
-PACKAGES_TO_SYNC=("cost" "llm-mapper")
+# Get packages to sync from environment variable or use default
+# Usage example: PACKAGES_TO_SYNC="cost llm-mapper some-other-package" ./sync_with_helicone.sh
+if [ -n "$PACKAGES_TO_SYNC" ]; then
+  # Convert space-separated string to array
+  read -ra PACKAGES_ARRAY <<< "$PACKAGES_TO_SYNC"
+  echo "Using packages from environment variable: ${PACKAGES_ARRAY[*]}"
+else
+  # Default packages if not specified
+  PACKAGES_ARRAY=("cost" "llm-mapper")
+  echo "Using default packages: ${PACKAGES_ARRAY[*]}"
+fi
 
-for pkg in "${PACKAGES_TO_SYNC[@]}"; do
+for pkg in "${PACKAGES_ARRAY[@]}"; do
   if [ -d "packages/$pkg" ]; then
     echo "Copying package: $pkg"
     cp -r "packages/$pkg" "$TEMP_DIR/target/packages/"
