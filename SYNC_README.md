@@ -55,8 +55,17 @@ flowchart LR
     D -->|Errors| F[Resolve issues]
     F --> C
     
-    style A fill:#98FB98,stroke:#006400,stroke-width:2px
-    style E fill:#FFB6C1,stroke:#8B0000,stroke-width:2px
+    classDef start fill:#00CC00,stroke:#006600,stroke-width:3px,color:#FFFFFF,font-weight:bold
+    classDef end fill:#FF3366,stroke:#990033,stroke-width:3px,color:#FFFFFF,font-weight:bold
+    classDef process fill:#3399FF,stroke:#0066CC,stroke-width:2px,color:#FFFFFF
+    classDef decision fill:#FFCC00,stroke:#FF9900,stroke-width:2px
+    classDef error fill:#FF6633,stroke:#CC3300,stroke-width:2px,color:#FFFFFF
+    
+    class A start
+    class E end
+    class B,C process
+    class D decision
+    class F error
 ```
 
 ## Troubleshooting
