@@ -48,7 +48,17 @@ done
 
 # Also copy necessary configuration files from the packages root
 echo "Copying package configuration files..."
-cp -r package.json tsconfig.json "$TEMP_DIR/target/"
+if [ -f "packages/package.json" ]; then
+  cp -r packages/package.json "$TEMP_DIR/target/packages/"
+else
+  echo "packages/package.json not found"
+fi
+
+if [ -f "packages/tsconfig.json" ]; then
+  cp -r packages/tsconfig.json "$TEMP_DIR/target/packages/"
+else
+  echo "packages/tsconfig.json not found"
+fi
 
 # Commit and push changes
 echo "Committing and pushing changes..."
