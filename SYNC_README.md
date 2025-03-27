@@ -5,7 +5,7 @@
 To sync packages from Helicone to the AI Cost Calculator repository:
 
 ```bash
-# 1. Update your Helicone fork first
+# 1. Update your Helicone fork first (NOT done by the script)
 git fetch upstream
 git merge upstream/main
 git push origin main
@@ -18,6 +18,8 @@ git push origin main
 
 This script safely copies the `cost` and `llm-mapper` packages from Helicone to the AI Cost Calculator repository, removing any potential secrets or API keys in the process.
 
+**Note:** The script does NOT update your Helicone fork from upstream. You must do this manually before running the script to ensure you're syncing the latest code.
+
 ## Running the Sync
 
 ### Prerequisites
@@ -25,11 +27,11 @@ This script safely copies the `cost` and `llm-mapper` packages from Helicone to 
 - Git command line tools
 - SSH access to both repositories
 - Bash shell environment
-- **Important**: Your Helicone fork must be up-to-date with the latest upstream changes
+- **Important**: Your Helicone fork must be up-to-date with the latest upstream changes (not handled by the script)
 
-### Step 1: Update Your Helicone Fork
+### Step 1: Update Your Helicone Fork (Manual Step)
 
-Before running the sync script, make sure your Helicone fork is up to date:
+Before running the sync script, you must manually update your Helicone fork:
 
 ```bash
 # Ensure you're in your Helicone directory
@@ -75,7 +77,7 @@ PACKAGES_TO_SYNC="some-other-package" ./sync_with_helicone.sh
 
 ```mermaid
 flowchart LR
-    A([Start]) --> B[Update Helicone fork]
+    A([Start]) --> B[Manually update Helicone fork]
     B --> C[Choose packages to sync]
     C --> D[Run sync script]
     D --> E{Check results}
@@ -88,7 +90,7 @@ flowchart LR
 
 If you encounter errors during the sync:
 
-1. Check that your Helicone fork is up to date with the latest changes
+1. Check that you have manually updated your Helicone fork with the latest changes
 2. Ensure you have SSH access to both repositories
 3. Check that the target branch (main) exists in the target repository
 4. Look for merge conflicts if the push fails
