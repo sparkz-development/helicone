@@ -56,13 +56,13 @@ PACKAGES_TO_SYNC="some-other-package" ./sync_with_helicone.sh
 
 ```mermaid
 flowchart LR
-    A([Start]) --> B[Run sync script]
-    B --> C[Script updates Helicone fork]
-    C --> D[Script syncs packages]
+    A([Start]) --> B[Manually update Helicone fork]
+    B --> C[Choose packages to sync]
+    C --> D[Run sync script]
     D --> E{Check results}
     E -->|Success| F([Done])
     E -->|Errors| G[Resolve issues]
-    G --> B
+    G --> C
 ```
 
 ## Troubleshooting
