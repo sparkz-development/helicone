@@ -3,6 +3,29 @@ set -e  # Exit on any error
 
 echo "Starting safe synchronization process..."
 
+# Step 1: Update local Helicone fork from upstream
+echo "Updating Helicone fork from upstream..."
+
+# Check if upstream remote exists, add if it doesn't
+if ! git remote | grep -q "upstream"; then
+  echo "Adding upstream remote..."
+  git remote add upstream https://github.com/helicone/helicone.git
+fi
+
+# Fetch and merge changes from upstream
+echo "Fetching from upstream..."
+git fetch upstream
+
+echo "Merging upstream changes..."
+git merge upstream/main
+
+echo "Pushing changes to your fork..."
+git push origin main
+
+echo "Helicone fork updated successfully!"
+
+# Step 2: Sync packages to AI Cost Calculator
+
 # Create a temporary directory for the sync
 TEMP_DIR=$(mktemp -d)
 echo "Created temporary directory: $TEMP_DIR"

@@ -5,20 +5,17 @@
 To sync packages from Helicone to the AI Cost Calculator repository:
 
 ```bash
-# 1. Update your Helicone fork first (NOT done by the script)
-git fetch upstream
-git merge upstream/main
-git push origin main
-
-# 2. Then run the sync script (default packages: cost and llm-mapper)
+# Run the sync script (automatically updates your fork and syncs default packages: cost and llm-mapper)
 ./sync_with_helicone.sh
 ```
 
 ## What This Script Does
 
-This script safely copies the `cost` and `llm-mapper` packages from Helicone to the AI Cost Calculator repository, removing any potential secrets or API keys in the process.
+This script:
 
-**Note:** The script does NOT update your Helicone fork from upstream. You must do this manually before running the script to ensure you're syncing the latest code.
+1. Automatically updates your Helicone fork from the upstream repository
+2. Safely copies the `cost` and `llm-mapper` packages to the AI Cost Calculator repository 
+3. Removes any potential secrets or API keys in the process
 
 ## Running the Sync
 
@@ -27,38 +24,20 @@ This script safely copies the `cost` and `llm-mapper` packages from Helicone to 
 - Git command line tools
 - SSH access to both repositories
 - Bash shell environment
-- **Important**: Your Helicone fork must be up-to-date with the latest upstream changes (not handled by the script)
 
-### Step 1: Update Your Helicone Fork (Manual Step)
+### Basic Usage
 
-Before running the sync script, you must manually update your Helicone fork:
-
-```bash
-# Ensure you're in your Helicone directory
-cd /path/to/helicone
-
-# Add upstream if not already added
-git remote add upstream https://github.com/helicone/helicone.git
-
-# Fetch and merge latest changes
-git fetch upstream
-git merge upstream/main
-
-# Push changes to your fork
-git push origin main
-```
-
-### Step 2: Run the Sync Script
-
-#### Basic Usage
-
-Run the script without any parameters to sync the default packages:
+Run the script without any parameters:
 
 ```bash
 ./sync_with_helicone.sh
 ```
 
-#### Syncing Specific Packages
+This will:
+1. Update your Helicone fork from upstream
+2. Sync the default packages (`cost` and `llm-mapper`)
+
+### Syncing Specific Packages
 
 You can specify which packages to sync using the `PACKAGES_TO_SYNC` environment variable:
 
@@ -77,23 +56,23 @@ PACKAGES_TO_SYNC="some-other-package" ./sync_with_helicone.sh
 
 ```mermaid
 flowchart LR
-    A([Start]) --> B[Manually update Helicone fork]
-    B --> C[Choose packages to sync]
-    C --> D[Run sync script]
+    A([Start]) --> B[Run sync script]
+    B --> C[Script updates Helicone fork]
+    C --> D[Script syncs packages]
     D --> E{Check results}
     E -->|Success| F([Done])
     E -->|Errors| G[Resolve issues]
-    G --> C
+    G --> B
 ```
 
 ## Troubleshooting
 
 If you encounter errors during the sync:
 
-1. Check that you have manually updated your Helicone fork with the latest changes
-2. Ensure you have SSH access to both repositories
-3. Check that the target branch (main) exists in the target repository
-4. Look for merge conflicts if the push fails
+1. Ensure you have SSH access to both repositories
+2. Check that the target branch (main) exists in the target repository
+3. Look for merge conflicts if the push fails
+4. Check for upstream merge errors (if your local fork has diverged significantly)
 
 ## Security Notes
 
