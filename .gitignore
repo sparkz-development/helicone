@@ -28,3 +28,6 @@ rosebud/
 
 dev.vars.*
 node_modules/
+
+# Sync script logs
+sync_*.log
