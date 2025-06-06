@@ -1,28 +1,26 @@
 // src/users/usersService.ts
 import { RequestQueryParams } from "../../controllers/public/requestController";
-import { FREQUENT_PRECENT_LOGGING } from "../../lib/db/DBQueryTimer";
-import { AuthParams, supabaseServer } from "../../lib/db/supabase";
+import { KVCache } from "../../lib/cache/kvCache";
+import { HeliconeScoresMessage } from "../../lib/handlers/HandlerContext";
 import { dbExecute, dbQueryClickhouse } from "../../lib/shared/db/dbExecute";
 import { S3Client } from "../../lib/shared/db/s3Client";
-import { FilterNode } from "../../lib/shared/filters/filterDefs";
-import { Result, err, ok, resultMap } from "../../lib/shared/result";
+import { FilterNode } from "@helicone-package/filters/filterDefs";
+import { Result, err, ok, resultMap } from "../../packages/common/result";
 import { VersionedRequestStore } from "../../lib/stores/request/VersionedRequestStore";
 import {
   HeliconeRequestAsset,
   getRequestAsset,
   getRequests,
-  getRequestsCached,
-  getRequestsCachedClickhouse,
   getRequestsClickhouse,
   getRequestsClickhouseNoSort,
 } from "../../lib/stores/request/request";
-import { HeliconeRequest } from "../../packages/llm-mapper/types";
-import { costOfPrompt } from "../../packages/cost";
+import { costOfPrompt } from "@helicone-package/cost";
+import { HeliconeRequest } from "@helicone-package/llm-mapper/types";
+import { cacheResultCustom } from "../../utils/cacheResult";
 import { BaseManager } from "../BaseManager";
 import { ScoreManager } from "../score/ScoreManager";
-import { HeliconeScoresMessage } from "../../lib/handlers/HandlerContext";
-import { cacheResultCustom } from "../../utils/cacheResult";
-import { KVCache } from "../../lib/cache/kvCache";
+import { AuthParams } from "../../packages/common/auth/types";
+import { buildFilterWithAuthClickHouse } from "@helicone-package/filters/filters";
 export const getModelFromPath = (path: string) => {
   const regex1 = /\/engines\/([^/]+)/;
   const regex2 = /models\/([^/:]+)/;
@@ -404,23 +402,15 @@ export class RequestManager extends BaseManager {
       newFilter = this.addPartOfExperimentFilter(isPartOfExperiment, newFilter);
     }
 
-    const requests = isCached
-      ? await getRequestsCached(
-          this.authParams.organizationId,
-          filter,
-          offset,
-          limit,
-          sort,
-          isPartOfExperiment,
-          isScored
-        )
-      : await getRequests(
-          this.authParams.organizationId,
-          newFilter,
-          offset,
-          limit,
-          sort
-        );
+    const requests = await getRequests(
+      this.authParams.organizationId,
+      newFilter,
+      offset,
+      limit,
+      sort,
+    );
+
+    console.log("requests", requests);
 
     return resultMap(requests, (req) => {
       return req.map((r) => {
@@ -436,10 +426,39 @@ export class RequestManager extends BaseManager {
             promptTokens: r.prompt_tokens ?? 0,
             promptCacheWriteTokens: r.prompt_cache_write_tokens ?? 0,
             promptCacheReadTokens: r.prompt_cache_read_tokens ?? 0,
+            promptAudioTokens: r.prompt_audio_tokens ?? 0,
+            completionAudioTokens: r.completion_audio_tokens ?? 0,
           }),
         };
       });
     });
+  }
+
+  async getRequestCount(params: {
+    filter: FilterNode;
+  }): Promise<Result<number, string>> {
+    const { filter } = params;
+    const builtFilter = await buildFilterWithAuthClickHouse({
+      org_id: this.authParams.organizationId,
+      filter,
+      argsAcc: [],
+    });
+
+    const query = `
+    SELECT COUNT(*) FROM request_response_rmt
+    WHERE (${builtFilter.filter})
+    `;
+
+    const { data, error } = await dbQueryClickhouse<{ count: number }>(
+      query,
+      builtFilter.argsAcc
+    );
+
+    if (error) {
+      return err(error);
+    }
+
+    return ok(data?.[0].count ?? 0);
   }
 
   async getRequestsClickhouse(
@@ -452,8 +471,6 @@ export class RequestManager extends BaseManager {
       sort = {
         created_at: "desc",
       },
-      isCached,
-      isPartOfExperiment,
       isScored,
     } = params;
 
@@ -463,30 +480,21 @@ export class RequestManager extends BaseManager {
       newFilter = this.addScoreFilterClickhouse(isScored, newFilter);
     }
 
-    const requests = isCached
-      ? await getRequestsCachedClickhouse(
-          this.authParams.organizationId,
-          filter,
-          offset,
-          limit,
-          sort,
-          isPartOfExperiment,
-          isScored
-        )
-      : sort.created_at === "desc"
-      ? await getRequestsClickhouseNoSort(
-          this.authParams.organizationId,
-          newFilter,
-          offset,
-          limit
-        )
-      : await getRequestsClickhouse(
-          this.authParams.organizationId,
-          newFilter,
-          offset,
-          limit,
-          sort
-        );
+    const requests =
+      sort.created_at === "desc"
+        ? await getRequestsClickhouseNoSort(
+            this.authParams.organizationId,
+            newFilter,
+            offset,
+            limit
+          )
+        : await getRequestsClickhouse(
+            this.authParams.organizationId,
+            newFilter,
+            offset,
+            limit,
+            sort
+          );
 
     return resultMap(requests, (req) => {
       const seen = new Set();

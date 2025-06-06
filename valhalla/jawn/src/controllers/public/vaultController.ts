@@ -10,8 +10,8 @@ import {
   Path,
   Patch,
 } from "tsoa";
-import { Result } from "../../lib/shared/result";
-import { JawnAuthenticatedRequest } from "../../types/request";
+import { Result } from "../../packages/common/result";
+import { type JawnAuthenticatedRequest } from "../../types/request";
 import {
   DecryptedProviderKey,
   VaultManager,

@@ -7,12 +7,12 @@ import {
 } from "../../controllers/public/evaluatorController";
 import { LLMAsAJudge } from "../../lib/clients/LLMAsAJudge/LLMAsAJudge";
 import { dbExecute } from "../../lib/shared/db/dbExecute";
-import { Result, err, ok, resultMap } from "../../lib/shared/result";
+import { Result, err, ok, resultMap } from "../../packages/common/result";
 import {
   ExperimentOutputForScores,
   ExperimentV2Manager,
 } from "../../managers/experiment/ExperimentV2Manager";
-import { HeliconeRequest, LlmSchema } from "../../packages/llm-mapper/types";
+import { HeliconeRequest, LlmSchema } from "@helicone-package/llm-mapper/types";
 import { BaseManager } from "../BaseManager";
 import { RequestManager } from "../request/RequestManager";
 import { ScoreManager } from "../score/ScoreManager";
@@ -55,15 +55,11 @@ export function getEvaluatorScoreName(evaluatorName: string) {
     .replace(/[^a-z0-9]+/g, "_");
 }
 
-export function getFullEvaluatorScoreName(
-  evaluatorName: string,
-) {
-  return (
-    evaluatorName
-      .toLowerCase()
-      .replace(" ", "_")
-      .replace(/[^a-z0-9]+/g, "_")
-  );
+export function getFullEvaluatorScoreName(evaluatorName: string) {
+  return evaluatorName
+    .toLowerCase()
+    .replace(" ", "_")
+    .replace(/[^a-z0-9]+/g, "_");
 }
 
 export class EvaluatorManager extends BaseManager {
@@ -276,6 +272,10 @@ export class EvaluatorManager extends BaseManager {
           assets: [],
           target_url: "",
           model: "gpt-3.5-turbo",
+          prompt_audio_tokens: null,
+          completion_audio_tokens: null,
+          cache_enabled: false,
+          cache_reference_id: null,
         },
       });
       if (scoreResult.error) {

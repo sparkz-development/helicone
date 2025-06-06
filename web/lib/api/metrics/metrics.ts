@@ -1,5 +1,4 @@
-import { SupabaseClient } from "@supabase/supabase-js";
-import { FilterNode } from "../../../services/lib/filters/filterDefs";
+import { FilterNode } from "@helicone-package/filters/filterDefs";
 
 export interface Metrics {
   average_requests_per_day: number;
@@ -14,9 +13,4 @@ export interface Metrics {
 
 export interface GetMetricsOptions {
   filter: FilterNode;
-}
-
-export interface AuthClient {
-  client: SupabaseClient;
-  orgId: string;
 }

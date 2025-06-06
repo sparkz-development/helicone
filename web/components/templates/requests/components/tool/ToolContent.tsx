@@ -1,4 +1,4 @@
-import { MappedLLMRequest } from "@/packages/llm-mapper/types";
+import { MappedLLMRequest } from "@helicone-package/llm-mapper/types";
 import { PROMPT_MODES } from "../chatComponent/chatTopBar";
 import { JsonView } from "../chatComponent/jsonView";
 import useNotification from "@/components/shared/notification/useNotification";
@@ -87,7 +87,6 @@ export const ToolContent: React.FC<ToolContentProps> = ({
         requestData.toolName,
         <TagIcon className="h-5 w-5 text-blue-500" />
       )}
-
       <div className="w-full flex flex-col text-left">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
           Request Parameters
@@ -104,7 +103,6 @@ export const ToolContent: React.FC<ToolContentProps> = ({
           })}
         </div>
       </div>
-
       {/* Response Status */}
       <div className="w-full flex flex-col text-left">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -144,7 +142,6 @@ export const ToolContent: React.FC<ToolContentProps> = ({
           })}
         </div>
       </div>
-
       {/* Additional Metadata Section - Only show if there's relevant metadata */}
       {Object.keys(responseDetails?.metadata ?? {}).length > 0 && (
         <div className="w-full flex flex-col text-left">

@@ -1,12 +1,12 @@
 import { NextFunction, Request, Response } from "express";
 import { authCheckThrow } from "../controllers/private/adminController";
-import { newPostHogClient } from "../lib/clients/postHogClient";
-import { AuthParams } from "../lib/db/supabase";
 import { RequestWrapper } from "../lib/requestWrapper";
-import { supabaseServer } from "../lib/routers/withAuth";
-import { uuid } from "uuidv4";
+import { AuthParams } from "../packages/common/auth/types";
+import { getHeliconeAuthClient } from "../packages/common/auth/server/AuthClientFactory";
+import { clickhouseDb } from "../lib/db/ClickhouseWrapper";
 
-export const logInPostHog = (
+// Replace PostHog with ClickHouse logging
+export const logHttpRequestInClickhouse = (
   reqParams: {
     method: string;
     url: string;
@@ -16,31 +16,30 @@ export const logInPostHog = (
     status: number;
   },
   authParams?: AuthParams
-) => {
+): (() => void) => {
   const start = Date.now();
-  const postHogClient = newPostHogClient();
-  postHogClient?.capture({
-    distinctId: authParams?.organizationId ?? "unknown",
-    event: "jawn_http_request",
-  });
 
-  const onFinish = async () => {
-    const duration = Date.now() - start;
-
+  const onFinish = () => {
     try {
-      postHogClient?.capture({
-        distinctId: authParams?.organizationId ?? "unknown",
-        event: "jawn_http_request",
-        properties: {
+      const duration = Date.now() - start;
+      const organizationId =
+        authParams?.organizationId ?? "00000000-0000-0000-0000-000000000000";
+
+      clickhouseDb.dbInsertClickhouse("jawn_http_logs", [
+        {
+          organization_id: organizationId,
           method: reqParams.method,
           url: reqParams.url,
           status: resParams.status,
           duration: duration,
-          userAgent: reqParams.userAgent,
+          user_agent: reqParams.userAgent,
+          timestamp: new Date().toISOString(),
+
+          properties: {},
         },
-      });
+      ]);
     } catch (error) {
-      console.error("Failed to capture request in PostHog:", error);
+      console.error("Failed to log request in ClickHouse:", error);
     }
   };
 
@@ -56,17 +55,26 @@ export const authMiddleware = async (
     next();
     return;
   }
+  if (req.path === "/v1/organization") {
+    next();
+    return;
+  }
 
   try {
     const request = new RequestWrapper(req);
     const authorization = request.authHeader();
+
     if (authorization.error) {
       res.status(401).json({
         error: authorization.error,
       });
       return;
     }
-    const authParams = await supabaseServer.authenticate(authorization.data!);
+
+    const authParams = await getHeliconeAuthClient().authenticate(
+      authorization.data!,
+      req.headers
+    );
 
     if (
       authParams.error ||
@@ -84,7 +92,7 @@ export const authMiddleware = async (
 
     (req as any).authParams = authParams.data;
 
-    const onFinish = logInPostHog(
+    const onFinish = logHttpRequestInClickhouse(
       {
         method: `${req.method}`,
         url: `${req.originalUrl}`,
@@ -98,7 +106,13 @@ export const authMiddleware = async (
 
     res.on("finish", onFinish);
 
-    if (req.path.startsWith("/admin")) {
+    if (req.path.startsWith("/v1/admin")) {
+      if(authorization.data?._type !== "jwt") {
+        res.status(401).json({
+          error: "Unauthorized",
+        });
+        return;
+      }
       await authCheckThrow(authParams.data.userId);
     }
     next();
@@ -106,3 +120,7 @@ export const authMiddleware = async (
     res.status(400).send("Invalid token.");
   }
 };
+export interface HeliconeUser {
+  email: string;
+  id: string;
+}

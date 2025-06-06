@@ -1,19 +1,19 @@
-import { heliconeRequestToMappedContent } from "@/packages/llm-mapper/utils/getMappedContent";
-import { UIFilterRowTree } from "@/services/lib/filters/types";
+import { heliconeRequestToMappedContent } from "@helicone-package/llm-mapper/utils/getMappedContent";
+import { UIFilterRowTree } from "@helicone-package/filters/types";
 import { TimeFilter } from "@/types/timeFilter";
 import { useState } from "react";
 import { getTimeIntervalAgo } from "../../../lib/timeCalculations/time";
 import { useModels } from "../../../services/hooks/models";
 import { useGetPropertiesV2 } from "../../../services/hooks/propertiesV2";
 import { useGetRequests } from "../../../services/hooks/requests";
-import { FilterNode } from "../../../services/lib/filters/filterDefs";
+import { FilterNode } from "@helicone-package/filters/filterDefs";
 import {
   getPropertyFiltersV2,
   REQUEST_TABLE_FILTERS,
   SingleFilterDef,
   textWithSuggestions,
-} from "../../../services/lib/filters/frontendFilterDefs";
-import { filterUITreeToFilterNode } from "../../../services/lib/filters/uiFilterRowTree";
+} from "@helicone-package/filters/frontendFilterDefs";
+import { filterUITreeToFilterNode } from "@helicone-package/filters/helpers";
 import { SortLeafRequest } from "../../../services/lib/sorts/requests/sorts";
 import { useFilterAST } from "@/filterAST/context/filterContext";
 import { toFilterNode } from "@/filterAST/toFilterNode";
@@ -22,10 +22,11 @@ const useRequestsPageV2 = (
   currentPage: number,
   currentPageSize: number,
   uiFilterIdxs: UIFilterRowTree,
-  advancedFilter: FilterNode,
+  timeFilterNode: FilterNode,
   sortLeaf: SortLeafRequest,
   isCached: boolean,
-  isLive: boolean
+  isLive: boolean,
+  rateLimited?: boolean
 ) => {
   const filterStore = useFilterAST();
   const [timeFilter] = useState<TimeFilter>({
@@ -43,7 +44,7 @@ const useRequestsPageV2 = (
   const { models, isLoading: isModelsLoading } = useModels(timeFilter, 50);
 
   const filterMap = (REQUEST_TABLE_FILTERS as SingleFilterDef<any>[]).concat(
-    propertyFilters
+    Array.isArray(propertyFilters) ? propertyFilters : []
   );
 
   // replace the model filter inside of the filterMap with the text suggestion model
@@ -71,18 +72,39 @@ const useRequestsPageV2 = (
     };
   }
 
+  const rateLimitFilterMapIndex = filterMap.findIndex(
+    (filter: any) => filter.label?.trim() === "Helicone-Rate-Limit-Status"
+  );
+
+  let rateLimitFilterNode: FilterNode = "all";
+  if (rateLimited && rateLimitFilterMapIndex !== -1) {
+    rateLimitFilterNode = filterUITreeToFilterNode(filterMap, {
+      filterMapIdx: rateLimitFilterMapIndex,
+      operatorIdx: 0,
+      value: "rate_limited",
+    });
+  }
+
   // sort the model by name
   models?.data?.sort((a, b) => a.model.localeCompare(b.model));
 
-  const filter: FilterNode = {
+  const nonTimeFilters: FilterNode = {
     left: {
-      right: filterUITreeToFilterNode(filterMap, uiFilterIdxs),
-      left: filterStore.store.filter
+      left: filterUITreeToFilterNode(filterMap, uiFilterIdxs),
+      right: filterStore.store.filter
         ? toFilterNode(filterStore.store.filter)
         : "all",
       operator: "and",
     },
-    right: advancedFilter,
+    // Combine with only the conditional Rate Limit Filter
+    right: rateLimitFilterNode,
+    operator: "and",
+  };
+
+  // Combine with time filter last
+  const filter: FilterNode = {
+    left: nonTimeFilters,
+    right: timeFilterNode,
     operator: "and",
   };
 
@@ -98,7 +120,7 @@ const useRequestsPageV2 = (
   const isDataLoading = requests.isLoading || isPropertiesLoading;
 
   return {
-    requests: requests.requests.map(heliconeRequestToMappedContent),
+    requests: requests.requests?.map(heliconeRequestToMappedContent) ?? [],
     count: count.data?.data,
     isDataLoading,
     isBodyLoading: requests.isLoading,
@@ -109,6 +131,7 @@ const useRequestsPageV2 = (
     searchPropertyFilters,
     filterMap,
     filter,
+    rateLimitFilterNode,
   };
 };
 

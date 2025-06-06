@@ -9,17 +9,14 @@ import {
   Security,
   Tags,
 } from "tsoa";
-import { Result, err, ok } from "../../lib/shared/result";
-import {
-  FilterLeafSubset,
-  FilterNode,
-} from "../../lib/shared/filters/filterDefs";
+import { Result, err, ok } from "../../packages/common/result";
+import { FilterLeafSubset } from "@helicone-package/filters/filterDefs";
 import { DatasetManager } from "../../managers/dataset/DatasetManager";
-import { JawnAuthenticatedRequest } from "../../types/request";
+import { type JawnAuthenticatedRequest } from "../../types/request";
 import {
   HeliconeDataset,
   HeliconeDatasetRow,
-  MutateParams,
+  type MutateParams,
 } from "../../managers/dataset/HeliconeDatasetManager";
 import { Json } from "../../lib/db/database.types";
 
@@ -186,5 +183,22 @@ export class HeliconeDatasetController extends Controller {
     }
     this.setStatus(200);
     return ok(null);
+  }
+
+  @Post("/{datasetId}/delete")
+  public async deleteHeliconeDataset(
+    @Path()
+    datasetId: string,
+    @Request() request: JawnAuthenticatedRequest
+  ): Promise<Result<null, string>> {
+    const datasetManager = new DatasetManager(request.authParams);
+    const result = await datasetManager.helicone.deleteDataset(datasetId);
+    if (result.error) {
+      this.setStatus(500);
+      return err(result.error);
+    } else {
+      this.setStatus(200);
+      return ok(null);
+    }
   }
 }

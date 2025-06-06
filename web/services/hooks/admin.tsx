@@ -1,53 +1,13 @@
-import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getJawnClient } from "../../lib/clients/jawn";
-import { components } from "../../lib/clients/jawnTypes/private";
 import Parser from "rss-parser";
-import { Database } from "@/supabase/database.types";
-
-const useAlertBanners = () => {
-  const supabaseClient = useSupabaseClient<Database>();
-  const {
-    data: alertBanners,
-    isLoading: isAlertBannersLoading,
-    refetch,
-  } = useQuery({
-    queryKey: ["alert-banners"],
-    queryFn: async () => {
-      const { data, error } = await supabaseClient
-        .from("alert_banners")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      return { data, error };
-    },
-    refetchOnWindowFocus: false,
-    staleTime: 60000,
-  });
-
-  return {
-    alertBanners,
-    isAlertBannersLoading,
-    refetch,
-  };
-};
+import { $JAWN_API, getJawnClient } from "../../lib/clients/jawn";
+import { components } from "../../lib/clients/jawnTypes/private";
 
 const useCreateAlertBanner = (onSuccess?: () => void) => {
-  const { mutate: createBanner, isLoading: isCreatingBanner } = useMutation({
-    mutationKey: ["create-alert-banner"],
-    mutationFn: async (req: { title: string; message: string }) => {
-      const jawnClient = getJawnClient();
-      const { data, error } = await jawnClient.POST("/v1/admin/alert_banners", {
-        body: req,
-      });
-
-      if (!error) {
-        onSuccess && onSuccess();
-      }
-
-      return { data, error };
-    },
-  });
+  const { mutate: createBanner, isPending: isCreatingBanner } =
+    $JAWN_API.useMutation("post", "/v1/admin/alert_banners", {
+      onSuccess,
+    });
   return {
     createBanner,
     isCreatingBanner,
@@ -55,7 +15,7 @@ const useCreateAlertBanner = (onSuccess?: () => void) => {
 };
 
 const useUpdateAlertBanner = (onSuccess?: () => void) => {
-  const { mutate: updateBanner, isLoading: isUpdatingBanner } = useMutation({
+  const { mutate: updateBanner, isPending: isUpdatingBanner } = useMutation({
     mutationKey: ["update-alert-banner"],
     mutationFn: async (req: { id: number; active: boolean }) => {
       const jawnClient = getJawnClient();
@@ -80,7 +40,7 @@ const useUpdateAlertBanner = (onSuccess?: () => void) => {
 };
 
 const useUpdateSetting = (onSuccess?: () => void) => {
-  const { mutate: updateSetting, isLoading: isUpdatingSetting } = useMutation({
+  const { mutate: updateSetting, isPending: isUpdatingSetting } = useMutation({
     mutationKey: ["update-settings"],
     mutationFn: async (req: {
       name: components["schemas"]["SettingName"];
@@ -180,10 +140,9 @@ const useChangelog = () => {
 };
 
 export {
-  useAlertBanners,
+  useChangelog,
   useCreateAlertBanner,
   useGetSetting,
   useUpdateAlertBanner,
   useUpdateSetting,
-  useChangelog,
 };

@@ -1,18 +1,18 @@
-import { AreaChart } from "@tremor/react";
+import { IslandContainer } from "@/components/ui/islandContainer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useUserId } from "../../../../services/hooks/users";
-import LoadingAnimation from "../../../shared/loadingAnimation";
-import { formatNumber } from "../initialColumns";
-import StyledAreaChart from "../../dashboard/styledAreaChart";
-import RequestsPageV2 from "../../requests/requestsPageV2";
-import { ElementType } from "react";
 import {
   PresentationChartLineIcon,
   TableCellsIcon,
 } from "@heroicons/react/24/outline";
+import { AreaChart } from "@tremor/react";
 import { useRouter } from "next/router";
+import { ElementType } from "react";
+import { useUserId } from "../../../../services/hooks/users";
+import LoadingAnimation from "../../../shared/loadingAnimation";
 import HcBreadcrumb from "../../../ui/hcBreadcrumb";
-import { IslandContainer } from "@/components/ui/islandContainer";
+import StyledAreaChart from "../../dashboard/styledAreaChart";
+import RequestsPage from "../../requests/RequestsPage";
+import { formatNumber } from "../initialColumns";
 
 interface UserIdPageProps {
   userId: string;
@@ -70,6 +70,12 @@ const UserIdPage = (props: UserIdPageProps) => {
       <>
         {isLoading ? (
           <LoadingAnimation />
+        ) : !user ? (
+          <div className="grid grid-cols-10 gap-8 w-full pt-8">
+            <div className="flex flex-col items-start space-y-4 w-full col-span-12 md:col-span-3 pt-2">
+              <p className="text-sm text-gray-500">User not found</p>
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-10 gap-8 w-full pt-8">
             <div className="flex flex-col items-start space-y-4 w-full col-span-12 md:col-span-3 pt-2">
@@ -79,13 +85,13 @@ const UserIdPage = (props: UserIdPageProps) => {
                   <div className="flex flex-col items-start space-y-1">
                     <p className="text-sm font-semibold">Total Cost</p>
                     <p className="text-sm text-gray-500">
-                      ${formatNumber(Number(user.cost || 0), 6)}
+                      ${formatNumber(Number(user?.cost ?? 0), 6)}
                     </p>
                   </div>
                   <div className="flex flex-col items-start space-y-1">
                     <p className="text-sm font-semibold">Total Requests</p>
                     <p className="text-sm text-gray-500">
-                      {user.total_requests}
+                      {user?.total_requests}
                     </p>
                   </div>
                   <div className="flex flex-col items-start space-y-1">
@@ -196,7 +202,7 @@ const UserIdPage = (props: UserIdPageProps) => {
                 </TabsContent>
                 <TabsContent value="1">
                   <div className="py-2">
-                    <RequestsPageV2
+                    <RequestsPage
                       currentPage={1}
                       pageSize={25}
                       sort={{
@@ -205,8 +211,6 @@ const UserIdPage = (props: UserIdPageProps) => {
                         isCustomProperty: false,
                       }}
                       userId={userId}
-                      currentFilter={null}
-                      organizationLayout={null}
                       organizationLayoutAvailable={false}
                     />
                   </div>

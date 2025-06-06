@@ -9,9 +9,9 @@ import {
   Security,
   Tags,
 } from "tsoa";
-import { JawnAuthenticatedRequest } from "../../types/request";
+import { type JawnAuthenticatedRequest } from "../../types/request";
 import { IntegrationManager } from "../../managers/IntegrationManager";
-import { Result } from "../../lib/shared/result";
+import { Result } from "../../packages/common/result";
 import { Json } from "../../lib/db/database.types";
 
 export interface IntegrationCreateParams {

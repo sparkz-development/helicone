@@ -1,411 +1,110 @@
-# Usage
-#   Start:          docker compose up
-#   With helpers:   docker compose -f docker-compose.yml -f ./dev/docker-compose.dev.yml up
-#   Stop:           docker compose down
-#   Destroy:        docker compose -f docker-compose.yml -f ./dev/docker-compose.dev.yml down -v --remove-orphans
+name: helicone-self-host
 
-version: "3.8"
 services:
-  studio:
-    container_name: supabase-studio
-    image: supabase/studio:20240101-8e4a094
-    restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://localhost:3000/api/profile', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})",
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    ports:
-      - 54323:3000/tcp
-    # depends_on:
-    #   analytics:
-    #     condition: service_healthy
-    environment:
-      STUDIO_PG_META_URL: http://meta:8080
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
-      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
-
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-
-      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
-      # LOGFLARE_URL: http://analytics:4000
-      NEXT_PUBLIC_ENABLE_LOGS: true
-      # Comment to use Big Query backend for analytics
-      # NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
-      # Uncomment to use Big Query backend for analytics
-      # NEXT_ANALYTICS_BACKEND_PROVIDER: bigquery
-
-  kong:
-    container_name: supabase-kong
-    image: kong:2.8.1
-    restart: unless-stopped
-    # https://unix.stackexchange.com/a/294837
-    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
-    ports:
-      - ${KONG_HTTP_PORT}:8000/tcp
-      - ${KONG_HTTPS_PORT}:8443/tcp
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
-      # https://github.com/supabase/cli/issues/14
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
-      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
-      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
-    volumes:
-      # https://github.com/supabase/supabase/issues/12661
-      - ./volumes/api/kong.yml:/home/kong/temp.yml:ro
-
-  auth:
-    container_name: supabase-auth
-    image: supabase/gotrue:v2.132.3
-    depends_on:
-      db:
-        # Disable this if you are using an external Postgres database
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:9999/health",
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    restart: unless-stopped
-    environment:
-      GOTRUE_API_HOST: 0.0.0.0
-      GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
-
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-
-      GOTRUE_SITE_URL: ${SITE_URL}
-      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
-      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
-
-      GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
-      GOTRUE_JWT_SECRET: ${JWT_SECRET}
-
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
-      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
-      # GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: true
-      # GOTRUE_SMTP_MAX_FREQUENCY: 1s
-      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
-      GOTRUE_SMTP_HOST: ${SMTP_HOST}
-      GOTRUE_SMTP_PORT: ${SMTP_PORT}
-      GOTRUE_SMTP_USER: ${SMTP_USER}
-      GOTRUE_SMTP_PASS: ${SMTP_PASS}
-      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
-      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE}
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION}
-      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY}
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
-
-      GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP}
-      GOTRUE_SMS_AUTOCONFIRM: ${ENABLE_PHONE_AUTOCONFIRM}
-
-  rest:
-    container_name: supabase-rest
-    image: postgrest/postgrest:v12.0.1
-    depends_on:
-      db:
-        # Disable this if you are using an external Postgres database
-        condition: service_healthy
-
-    restart: unless-stopped
-    environment:
-      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
-      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
-    command: "postgrest"
-
-  # To use S3 backed storage: docker compose -f docker-compose.yml -f docker-compose.s3.yml up
-  storage:
-    container_name: supabase-storage
-    image: supabase/storage-api:v0.43.11
-    depends_on:
-      db:
-        # Disable this if you are using an external Postgres database
-        condition: service_healthy
-      rest:
-        condition: service_started
-
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:5000/status",
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    restart: unless-stopped
-    environment:
-      ANON_KEY: ${ANON_KEY}
-      SERVICE_KEY: ${SERVICE_ROLE_KEY}
-      POSTGREST_URL: http://rest:3000
-      PGRST_JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      FILE_SIZE_LIMIT: 52428800
-      STORAGE_BACKEND: file
-      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
-      TENANT_ID: stub
-      # TODO: https://github.com/supabase/storage-api/issues/55
-      REGION: stub
-      GLOBAL_S3_BUCKET: stub
-      ENABLE_IMAGE_TRANSFORMATION: "true"
-      IMGPROXY_URL: http://imgproxy:5001
-    volumes:
-      - ./volumes/storage:/var/lib/storage:z
-
-  meta:
-    container_name: supabase-meta
-    image: supabase/postgres-meta:v0.75.0
-    depends_on:
-      db:
-        # Disable this if you are using an external Postgres database
-        condition: service_healthy
-    restart: unless-stopped
-    environment:
-      PG_META_PORT: 8080
-      PG_META_DB_HOST: ${POSTGRES_HOST}
-      PG_META_DB_PORT: ${POSTGRES_PORT}
-      PG_META_DB_NAME: ${POSTGRES_DB}
-      PG_META_DB_USER: supabase_admin
-      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
-
-  # Comment out everything below this point if you are using an external Postgres database
+  # =============================================================================
+  # INFRASTRUCTURE SERVICES (Default profile - always runs)
+  # =============================================================================
+  
   db:
-    container_name: supabase-db
-    image: supabase/postgres:15.1.0.147
+    image: postgres:17.4
+    container_name: helicone-postgres-flyway-test
+    environment:
+      POSTGRES_DB: helicone_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: testpassword
+    ports:
+      - "54388:5432"
+    volumes:
+      - postgres_flyway_data:/var/lib/postgresql/data
     healthcheck:
-      test: pg_isready -U postgres -h localhost
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
-      retries: 10
-    command:
-      - postgres
-      - -c
-      - config_file=/etc/postgresql/postgresql.conf
-      - -c
-      - log_min_messages=fatal # prevents Realtime polling queries from appearing in logs
-    restart: unless-stopped
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3.13.40
+    container_name: helicone-clickhouse
     ports:
-      # Pass down internal port because it's set dynamically by other services
-      - ${POSTGRES_PORT}:${POSTGRES_PORT}
-    environment:
-      POSTGRES_HOST: /var/run/postgresql
-      PGPORT: ${POSTGRES_PORT}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: ${POSTGRES_DB}
-      POSTGRES_DB: ${POSTGRES_DB}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXP: ${JWT_EXPIRY}
+      - "18123:8123" # HTTP interface
+      - "19000:9000" # Native interface
     volumes:
-      - ./volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
-      # Must be superuser to create event trigger
-      - ./volumes/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
-      # Must be superuser to alter reserved role
-      - ./volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
-      # Initialize the database settings with JWT_SECRET and JWT_EXP
-      - ./volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
-      # PGDATA directory is persisted between restarts
-      - ./volumes/db/data:/var/lib/postgresql/data:Z
-      # Changes required for Analytics support
-      - ./volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
-
-  web:
-    container_name: helicone-web-local
-    depends_on:
-      - db
-      - jawn
-      - clickhouse-db
-      - kong
-      - clickhouse-migration-runner
-      - supabase-migration-runner
-    build:
-      context: ../web
-      dockerfile: ../docker/dockerfiles/dockerfile_web
-      args:
-        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
-        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-        NEXT_PUBLIC_HELICONE_JAWN_SERVICE: ${JAWN_PUBLIC_URL}
-
-    restart: unless-stopped
-    ports:
-      - 3000:3000
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
     environment:
-      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
-      NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-      NEXT_PUBLIC_HELICONE_JAWN_SERVICE: ${JAWN_PUBLIC_URL}
-
-      SUPABASE_URL: http://kong:${KONG_HTTP_PORT}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      CLICKHOUSE_HOST: http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      VERCEL_ENV: ${VERCEL_ENV}
-
-  clickhouse-db:
-    container_name: clickhouse-db
-    image: clickhouse/clickhouse-server:23.4.2.11
+      CLICKHOUSE_DEFAULT_USER: default
+    restart: unless-stopped
     healthcheck:
-      test: apt update -y && apt install curl -y && echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
-      interval: 5s
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 10s
       timeout: 5s
-      retries: 10
-    restart: unless-stopped
-    ports:
-      - ${CLICKHOUSE_PORT}:8123/tcp
-    volumes:
-      - ./volumes/clickhouse:/var/lib/clickhouse:z
-    environment:
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      retries: 5
+      start_period: 30s
 
-  clickhouse-migration-runner:
-    container_name: clickhouse-migration-runner
-    build:
-      context: ../clickhouse
-      dockerfile: ../docker/dockerfiles/dockerfile_clickhouse_migration_runner
+  minio:
+    image: minio/minio
+    container_name: helicone-minio
+    ports:
+      - "9000:9000" # MinIO API port
+      - "9001:9001" # MinIO Console port
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
+
+  minio-setup:
+    image: minio/mc:RELEASE.2025-04-08T15-39-49Z
     depends_on:
-      clickhouse-db:
-        # Disable this if you are using an external Postgres database
+      minio:
         condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set localminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb --ignore-existing localminio/request-response-storage;
+      exit 0;
+      "
 
-    environment:
-      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
-      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    ports:
+      - "1025:1025" # SMTP port
+      - "8025:8025" # Web UI port
 
-  supabase-migration-runner:
-    container_name: supabase-migration-runner
+  migrations:
     build:
-      context: ../supabase
-      dockerfile: ../docker/dockerfiles/dockerfile_supabase_migration_runner
-      # target: linux/amd64
+      context: ../
+      dockerfile: docker/dockerfiles/dockerfile_migrations
     depends_on:
       db:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      FLYWAY_URL: jdbc:postgresql://db:5432/helicone_test
+      FLYWAY_USER: postgres
+      FLYWAY_PASSWORD: testpassword
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_USER: default
+    volumes:
+      - ../supabase:/app/supabase
+      - ../clickhouse:/app/clickhouse
 
-  worker-openai-proxy:
-    container_name: helicone-worker-openai-proxy
-    build:
-      context: ../worker
-      dockerfile: ../docker/dockerfiles/dockerfile_worker
-    restart: unless-stopped
-    ports:
-      - ${OPENAI_PROXY_PORT}:${OPENAI_PROXY_PORT}
-    environment:
-      WORKER_TYPE: OPENAI_PROXY
-      WORKER_PORT: ${OPENAI_PROXY_PORT}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_URL: http://kong:${KONG_HTTP_PORT}
-      CLICKHOUSE_HOST: http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      VALHALLA_URL: http://jawn:${JAWN_PORT}
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      S3_BUCKET_NAME: "request-response-storage"
-
-  worker-api:
-    container_name: helicone-worker-api
-    build:
-      context: ../worker
-      dockerfile: ../docker/dockerfiles/dockerfile_worker
-    restart: unless-stopped
-    ports:
-      - ${HELICONE_API_PORT}:${HELICONE_API_PORT}
-    environment:
-      WORKER_TYPE: HELICONE_API
-      WORKER_PORT: ${HELICONE_API_PORT}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_URL: http://kong:${KONG_HTTP_PORT}
-      CLICKHOUSE_HOST: http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-
-  worker-anthropic-proxy:
-    container_name: helicone-worker-anthropic-proxy
-    build:
-      context: ../worker
-      dockerfile: ../docker/dockerfiles/dockerfile_worker
-    restart: unless-stopped
-    ports:
-      - ${ANTHROPIC_PROXY_PORT}:${ANTHROPIC_PROXY_PORT}
-    environment:
-      WORKER_TYPE: ANTHROPIC_PROXY
-      WORKER_PORT: ${ANTHROPIC_PROXY_PORT}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_URL: http://kong:${KONG_HTTP_PORT}
-      CLICKHOUSE_HOST: http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-
-  worker-gateway:
-    container_name: helicone-worker-gateway
-    build:
-      context: ../worker
-      dockerfile: ../docker/dockerfiles/dockerfile_worker
-    restart: unless-stopped
-    ports:
-      - ${GATEWAY_API_PORT}:${GATEWAY_API_PORT}
-    environment:
-      WORKER_TYPE: HELICONE_API
-      WORKER_PORT: ${GATEWAY_API_PORT}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_URL: http://kong:${KONG_HTTP_PORT}
-      CLICKHOUSE_HOST: http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+  # =============================================================================
+  # HELICONE CORE SERVICES (include-helicone profile)
+  # =============================================================================
 
   jawn:
     container_name: helicone-jawn
@@ -414,49 +113,326 @@ services:
       dockerfile: valhalla/dockerfile
     restart: unless-stopped
     ports:
-      - ${JAWN_PORT}:${JAWN_PORT}
+      - ${JAWN_PORT:-8585}:${JAWN_PORT:-8585}
+    profiles: ["include-helicone"]
+    depends_on:
+      db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     environment:
-      PORT: ${JAWN_PORT}
-
-      SUPABASE_CREDS: |
-        {
-          "url": "http://kong:${KONG_HTTP_PORT}",
-          "service_role_key": "${SERVICE_ROLE_KEY}"
-        }
-      SUPABASE_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      PORT: ${JAWN_PORT:-8585}
+      NEXT_PUBLIC_BETTER_AUTH: "true"
       S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
       S3_BUCKET_NAME: "request-response-storage"
       S3_ENDPOINT_PUBLIC: http://localhost:9000
       CLICKHOUSE_CREDS: |
         {
-          "CLICKHOUSE_HOST": "http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}",
-          "CLICKHOUSE_USER": "${CLICKHOUSE_USER}",
-          "CLICKHOUSE_PASSWORD": "${CLICKHOUSE_PASSWORD}"
+          "CLICKHOUSE_HOST": "http://clickhouse:8123",
+          "CLICKHOUSE_USER": "default",
+          "CLICKHOUSE_PASSWORD": ""
         }
-      VERCEL_ENV: ${VERCEL_ENV}
+      VERCEL_ENV: ${VERCEL_ENV:-development}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-secret-key}
+      SUPABASE_DATABASE_URL: postgres://postgres:testpassword@db:5432/helicone_test
 
-  minio:
-    container_name: helicone-minio
-    image: minio/minio:latest
+  web:
+    container_name: helicone-web
+    build:
+      context: ../
+      dockerfile: docker/dockerfiles/dockerfile_web
+      args:
+        NEXT_PUBLIC_HELICONE_JAWN_SERVICE: ${JAWN_PUBLIC_URL:-http://localhost:8585}
+        NEXT_PUBLIC_BETTER_AUTH: "true"
+        NODE_ENV: development
+    ports:
+      - "3000:3000"
+    profiles: ["include-helicone"]
+    depends_on:
+      jawn:
+        condition: service_started
+      db:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_HELICONE_JAWN_SERVICE: ${JAWN_PUBLIC_URL:-http://localhost:8585}
+      DATABASE_URL: postgres://postgres:testpassword@db:5432/helicone_test
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      VERCEL_ENV: ${VERCEL_ENV:-development}
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      NEXT_PUBLIC_BETTER_AUTH: "true"
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-secret-key}
+      SMTP_SECURE: false
+      NODE_ENV: development
+
+  # =============================================================================
+  # DEVELOPMENT SERVICES (dev profile)
+  # =============================================================================
+
+  jawn-dev:
+    container_name: helicone-jawn-dev
+    build:
+      context: ../
+      dockerfile: valhalla/dockerfile_dev
     restart: unless-stopped
     ports:
-      - 9000:9000
-      - 9001:9001
+      - ${JAWN_PORT:-8585}:${JAWN_PORT:-8585}
+    profiles: ["dev"]
+    depends_on:
+      db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      PORT: ${JAWN_PORT:-8585}
+      NEXT_PUBLIC_BETTER_AUTH: "true"
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_NAME: "request-response-storage"
+      S3_ENDPOINT_PUBLIC: http://localhost:9000
+      CLICKHOUSE_CREDS: |
+        {
+          "CLICKHOUSE_HOST": "http://clickhouse:8123",
+          "CLICKHOUSE_USER": "default",
+          "CLICKHOUSE_PASSWORD": ""
+        }
+      VERCEL_ENV: ${VERCEL_ENV:-development}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-secret-key}
+      SUPABASE_DATABASE_URL: postgres://postgres:testpassword@db:5432/helicone_test
     volumes:
-      - ./volumes/minio:/data:z
-    command: server /data --console-address ":9001"
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/docker-entrypoint.sh server /data --console-address ':9001' &
-      sleep 5;
-      mc alias set myminio http://localhost:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
-      if ! mc ls myminio/request-response-storage; then
-        mc mb myminio/request-response-storage;
-      fi;
-      tail -f /dev/null
-      "
+      - ../valhalla:/app/valhalla
+      - ../shared:/app/shared
+      - /app/valhalla/node_modules
+    working_dir: /app/valhalla/jawn
+    command: yarn dev
+
+  web-dev:
+    container_name: helicone-web-dev
+    build:
+      context: ../web
+      dockerfile: docker/dockerfiles/dockerfile_web_dev
+    ports:
+      - "3000:3000"
+    profiles: ["dev"]
+    depends_on:
+      jawn-dev:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - ../web:/app/web
+      - /app/web/node_modules
+      - /app/web/.next
+    environment:
+      NEXT_PUBLIC_HELICONE_JAWN_SERVICE: ${JAWN_PUBLIC_URL:-http://localhost:8585}
+      DATABASE_URL: postgres://postgres:testpassword@db:5432/helicone_test
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      VERCEL_ENV: ${VERCEL_ENV:-development}
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      NEXT_PUBLIC_BETTER_AUTH: "true"
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-secret-key}
+      SMTP_SECURE: false
+      NODE_ENV: development
+    command: yarn dev:local -p 3000
+
+  # =============================================================================
+  # WORKER SERVICES (workers profile)
+  # =============================================================================
+
+  worker-openai-proxy:
+    image: worker-local
+    build:
+      context: ../worker
+      dockerfile: docker/dockerfiles/dockerfile_worker
+    container_name: helicone-worker-openai-proxy
+    ports:
+      - "8787:8787"
+    profiles: ["workers"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8787
+      WORKER_TYPE: OPENAI_PROXY
+      WORKER_PORT: 8787
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      VALHALLA_URL: http://jawn:${JAWN_PORT:-8585}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_NAME: request-response-storage
+
+  worker-helicone-api:
+    image: worker-local
+    build:
+      context: ../worker
+      dockerfile: docker/dockerfiles/dockerfile_worker
+    container_name: helicone-worker-api
+    ports:
+      - "8788:8788"
+    profiles: ["workers"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8788
+      WORKER_TYPE: HELICONE_API
+      WORKER_PORT: 8788
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      VALHALLA_URL: http://jawn:${JAWN_PORT:-8585}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+
+  worker-gateway-api:
+    image: worker-local
+    build:
+      context: ../worker
+      dockerfile: docker/dockerfiles/dockerfile_worker
+    container_name: helicone-worker-gateway
+    ports:
+      - "8789:8789"
+    profiles: ["workers"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8789
+      WORKER_TYPE: GATEWAY_API
+      WORKER_PORT: 8789
+      GATEWAY_TARGET: https://openrouter.ai
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      VALHALLA_URL: http://jawn:${JAWN_PORT:-8585}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+
+  worker-anthropic-proxy:
+    image: worker-local
+    build:
+      context: ../worker
+      dockerfile: docker/dockerfiles/dockerfile_worker
+    container_name: helicone-worker-anthropic
+    ports:
+      - "8790:8790"
+    profiles: ["workers"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8790
+      WORKER_TYPE: ANTHROPIC_PROXY
+      WORKER_PORT: 8790
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      VALHALLA_URL: http://jawn:${JAWN_PORT:-8585}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+
+  worker-generate-api:
+    image: worker-local
+    build:
+      context: ../worker
+      dockerfile: docker/dockerfiles/dockerfile_worker
+    container_name: helicone-worker-generate
+    ports:
+      - "8791:8791"
+    profiles: ["workers"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 8791
+      WORKER_TYPE: GENERATE_API
+      WORKER_PORT: 8791
+      CLICKHOUSE_HOST: http://clickhouse:8123
+      VALHALLA_URL: http://jawn:${JAWN_PORT:-8585}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+
+  # =============================================================================
+  # KAFKA SERVICES (kafka profile - experimental)
+  # =============================================================================
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.8.0
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    profiles: ["kafka"]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_SERVERS: zookeeper:2888:3888
+
+  kafka:
+    image: confluentinc/cp-kafka:7.8.0
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+      - "9999:9999"
+    profiles: ["kafka"]
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092,DOCKER://host.docker.internal:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,DOCKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JMX_PORT: 9999
+      KAFKA_JMX_HOSTNAME: ${DOCKER_HOST_IP:-127.0.0.1}
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+
+volumes:
+  postgres_flyway_data:
+    driver: local
+  minio_data:
+    driver: local
+  clickhouse_data:
+    driver: local

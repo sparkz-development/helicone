@@ -1,4 +1,5 @@
 // "use client";
+import { JsonRenderer } from "@/components/templates/requests/components/chatComponent/single/JsonRenderer";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -8,23 +9,22 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useState } from "react";
-import { PiChatsBold } from "react-icons/pi";
+import { PiBrainBold, PiChatsBold, PiToolboxBold } from "react-icons/pi";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import GlassHeader from "../universal/GlassHeader";
 
 interface ResponsePanelProps {
-  response: string;
+  response?: { content: string; reasoning: string; calls: string };
   onAddToMessages?: () => void;
   scrollToBottom?: () => void;
 }
-
 export default function ResponsePanel({
   response,
   onAddToMessages,
   scrollToBottom,
 }: ResponsePanelProps) {
-  const [view, setView] = useState("markdown");
+  const [view, setView] = useState<"render" | "text">("render");
 
   return (
     <div className="flex flex-col group">
@@ -53,10 +53,14 @@ export default function ResponsePanel({
               </Tooltip>
             </TooltipProvider>
           )}
-          <Tabs value={view} onValueChange={setView} defaultValue="markdown">
+          <Tabs
+            value={view}
+            onValueChange={(value) => setView(value as "render" | "text")}
+            defaultValue="render"
+          >
             <TabsList variant="default" size="xs" asPill>
-              <TabsTrigger value="markdown" asPill>
-                Markdown
+              <TabsTrigger value="render" asPill>
+                Render
               </TabsTrigger>
               <TabsTrigger value="text" asPill>
                 Text
@@ -67,22 +71,52 @@ export default function ResponsePanel({
       </GlassHeader>
 
       {/* Response Views */}
-      <div className="select-text px-4 pb-2.5">
+      <div className="flex flex-col gap-4 select-text px-4 pb-2.5">
+        {/* Reasoning */}
+        {response?.reasoning && (
+          <div className="flex flex-row gap-2 text-xs text-tertiary border border-border rounded-lg p-2.5">
+            <PiBrainBold className="w-4 h-4 shrink-0" />
+            <p>{response.reasoning}</p>
+          </div>
+        )}
+
+        {/* Content */}
         {response ? (
-          view === "markdown" ? (
+          view === "render" ? (
             <ReactMarkdown
-              className="text-sm text-secondary"
+              className="text-sm text-secondary [&>*:last-child]:mb-0"
               components={markdownComponents}
             >
-              {response}
+              {response.content}
             </ReactMarkdown>
           ) : (
-            <p className="text-sm text-secondary pt-0.5">{response}</p>
+            <p className="text-sm text-secondary pt-0.5">{response.content}</p>
           )
         ) : (
           <p className="whitespace-pre-wrap text-sm text-tertiary">
             Response will appear here...
           </p>
+        )}
+
+        {/* Calls */}
+        {response?.calls && (
+          <div className="flex flex-row gap-2 text-xs text-tertiary border border-border rounded-lg p-2.5">
+            <PiToolboxBold className="w-4 h-4 shrink-0" />
+            {view === "render" ? (
+              <JsonRenderer
+                showCopyButton={false}
+                data={(() => {
+                  try {
+                    return JSON.parse(response.calls);
+                  } catch (error) {
+                    return response.calls;
+                  }
+                })()}
+              />
+            ) : (
+              <p>{response.calls}</p>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -90,7 +124,7 @@ export default function ResponsePanel({
 }
 
 // Define custom components for ReactMarkdown
-const markdownComponents: Components = {
+export const markdownComponents: Components = {
   code({ className, children, ...props }) {
     // Check if this is an inline code block by examining the parent node
     const isInline = !className?.includes("language-");
@@ -131,29 +165,29 @@ const markdownComponents: Components = {
   },
   // Add styling for other markdown elements
   p({ children }) {
-    return <p className="mb-4 leading-6">{children}</p>;
+    return <p className="leading-6">{children}</p>;
   },
   ul({ children }) {
-    return <ul className="mb-4 ml-6 list-disc">{children}</ul>;
+    return <ul className="ml-6 list-disc">{children}</ul>;
   },
   ol({ children }) {
-    return <ol className="mb-4 ml-6 list-decimal">{children}</ol>;
+    return <ol className="ml-6 list-decimal">{children}</ol>;
   },
   li({ children }) {
-    return <li className="mb-2">{children}</li>;
+    return <li className="">{children}</li>;
   },
   h1({ children }) {
-    return <h1 className="mb-4 text-2xl font-semibold">{children}</h1>;
+    return <h1 className="text-2xl font-semibold">{children}</h1>;
   },
   h2({ children }) {
-    return <h2 className="mb-3 text-xl font-semibold">{children}</h2>;
+    return <h2 className="text-xl font-semibold">{children}</h2>;
   },
   h3({ children }) {
-    return <h3 className="mb-3 text-lg font-semibold">{children}</h3>;
+    return <h3 className="text-lg font-semibold">{children}</h3>;
   },
   blockquote({ children }) {
     return (
-      <blockquote className="mb-4 border-l-4 border-muted-foreground/30 pl-4 italic text-muted-foreground">
+      <blockquote className="border-l-4 border-muted-foreground/30 pl-4 italic text-muted-foreground">
         {children}
       </blockquote>
     );

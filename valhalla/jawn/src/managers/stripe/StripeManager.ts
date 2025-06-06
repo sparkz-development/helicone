@@ -5,14 +5,19 @@ import {
   UpgradeToTeamBundleRequest,
 } from "../../controllers/public/stripeController";
 import { clickhouseDb } from "../../lib/db/ClickhouseWrapper";
-import { AuthParams, supabaseServer } from "../../lib/db/supabase";
-import { dbQueryClickhouse } from "../../lib/shared/db/dbExecute";
-import { buildFilterWithAuthClickHouse } from "../../lib/shared/filters/filters";
-import { Result, err, ok } from "../../lib/shared/result";
-import { costOf } from "../../packages/cost";
+import { Database } from "../../lib/db/database.types";
+import { dbExecute, dbQueryClickhouse } from "../../lib/shared/db/dbExecute";
+import { buildFilterWithAuthClickHouse } from "@helicone-package/filters/filters";
+import { getHeliconeAuthClient } from "../../packages/common/auth/server/AuthClientFactory";
+import { AuthParams } from "../../packages/common/auth/types";
+import { Result, err, ok } from "../../packages/common/result";
+import { costOf } from "@helicone-package/cost";
 import { BaseManager } from "../BaseManager";
 import { OrganizationManager } from "../organization/OrganizationManager";
-import { Database } from "../../lib/db/database.types";
+import { KVCache } from "../../lib/cache/kvCache";
+import { cacheResultCustom } from "../../utils/cacheResult";
+type StripeMeterEvent = Stripe.V2.Billing.MeterEventStreamCreateParams.Event;
+const cache = new KVCache(60 * 1000); // 1 hour
 
 const DEFAULT_PRODUCT_PRICES = {
   "request-volume": process.env.PRICE_PROD_REQUEST_VOLUME_ID!, //(This is just growth)
@@ -24,33 +29,70 @@ const DEFAULT_PRODUCT_PRICES = {
   team_bundle: process.env.PRICE_PROD_TEAM_BUNDLE_ID!,
 } as const;
 
+const getMeterId = async (
+  meterName: "stripe:trace-meter-id"
+): Promise<Result<string, string>> => {
+  const result = await dbExecute<{ name: string; settings: any }>(
+    `SELECT * FROM helicone_settings where name = $1`,
+    [meterName]
+  );
+
+  if (result.error) {
+    return err(`Error fetching meter id: ${result.error}`);
+  }
+
+  if (
+    !result.data?.[0]?.settings?.meterId ||
+    typeof result.data?.[0]?.settings?.meterId !== "string"
+  ) {
+    return err("Meter id not found");
+  }
+
+  return ok(result.data[0].settings.meterId);
+};
+
 const getProProductPrices = async (): Promise<
   typeof DEFAULT_PRODUCT_PRICES
 > => {
-  const db = await supabaseServer.client.from("helicone_settings").select("*");
+  try {
+    const result = await dbExecute<{ name: string; settings: any }>(
+      `SELECT * FROM helicone_settings`,
+      []
+    );
 
-  return Object.entries(DEFAULT_PRODUCT_PRICES)
-    .map(([productId, defaultPriceId]) => {
-      const setting = db.data?.find(
-        (setting) => setting.name === `price:${productId}`
-      );
-      if (setting) {
-        return { [productId]: setting.settings as string };
-      } else {
-        // Populate with default prices
-        if (!db.error) {
-          supabaseServer.client.from("helicone_settings").insert({
-            name: `price:${productId}`,
-            settings: defaultPriceId,
-          });
+    if (result.error) {
+      console.error("Error fetching product prices:", result.error);
+      return DEFAULT_PRODUCT_PRICES;
+    }
+
+    return Object.entries(DEFAULT_PRODUCT_PRICES)
+      .map(([productId, defaultPriceId]) => {
+        const setting = result.data?.find(
+          (setting) => setting.name === `price:${productId}`
+        );
+        if (setting) {
+          return { [productId]: setting.settings as string };
+        } else {
+          if (defaultPriceId) {
+            // Populate with default prices
+            dbExecute(
+              `INSERT INTO helicone_settings (name, settings)
+             VALUES ($1, $2)
+             ON CONFLICT (name) DO UPDATE SET settings = $2`,
+              [`price:${productId}`, JSON.stringify(defaultPriceId)]
+            );
+          }
         }
-      }
-      return { [productId]: defaultPriceId };
-    })
-    .reduce(
-      (acc, curr) => ({ ...acc, ...curr }),
-      {}
-    ) as typeof DEFAULT_PRODUCT_PRICES;
+        return { [productId]: defaultPriceId };
+      })
+      .reduce(
+        (acc, curr) => ({ ...acc, ...curr }),
+        {}
+      ) as typeof DEFAULT_PRODUCT_PRICES;
+  } catch (error) {
+    console.error("Error in getProProductPrices:", error);
+    return DEFAULT_PRODUCT_PRICES;
+  }
 };
 
 const COST_OF_PROMPTS = 50;
@@ -65,7 +107,7 @@ export class StripeManager extends BaseManager {
   constructor(authParams: AuthParams) {
     super(authParams);
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-      apiVersion: "2024-06-20",
+      apiVersion: "2025-02-24.acacia",
     });
   }
 
@@ -97,6 +139,42 @@ export class StripeManager extends BaseManager {
     }
 
     return ok(COST_OF_PROMPTS);
+  }
+
+  public async trackStripeMeter(
+    events: StripeMeterEvent[]
+  ): Promise<Result<string, string>> {
+    try {
+      // First create a meter event session to get an auth token
+      const meterEventSession =
+        await this.stripe.v2.billing.meterEventSession.create();
+
+      // Use a direct fetch to the meter events stream endpoint with the auth token
+      // The endpoint is different from the standard Stripe API endpoint
+      const response = await fetch(
+        "https://meter-events.stripe.com/v2/billing/meter_event_stream",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${meterEventSession.authentication_token}`,
+            "Content-Type": "application/json",
+            "Stripe-Version": "2025-03-31.preview",
+          },
+          body: JSON.stringify({ events }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Error response from Stripe: ${response.status} ${errorText}`
+        );
+      }
+
+      return ok("Success");
+    } catch (error) {
+      return err(`Error tracking stripe meter: ${error}`);
+    }
   }
 
   public async getCostForEvals(): Promise<Result<number, string>> {
@@ -160,39 +238,58 @@ export class StripeManager extends BaseManager {
   }
 
   private async getOrCreateStripeCustomer(): Promise<Result<string, string>> {
-    const organization = await supabaseServer.client
-      .from("organization")
-      .select("*")
-      .eq("id", this.authParams.organizationId)
-      .single();
-
-    if (!organization.data?.stripe_customer_id) {
-      const user = await supabaseServer.client.auth.admin.getUserById(
-        this.authParams.userId ?? ""
+    try {
+      // Try to get the organization's stripe customer ID
+      const orgResult = await dbExecute<{ stripe_customer_id: string }>(
+        `SELECT stripe_customer_id
+         FROM organization
+         WHERE id = $1
+         LIMIT 1`,
+        [this.authParams.organizationId]
       );
 
-      console.log(user);
-      if (!user.data?.user?.email) {
+      if (orgResult.error) {
+        return err(`Error fetching organization: ${orgResult.error}`);
+      }
+
+      // If organization has a stripe_customer_id, return it
+      if (orgResult.data?.[0]?.stripe_customer_id) {
+        return ok(orgResult.data[0].stripe_customer_id);
+      }
+
+      // Otherwise, need to create a new customer in Stripe
+      // We still need to use the auth API for this specific function
+      const authClient = getHeliconeAuthClient();
+      const user = await authClient.getUserById(this.authParams.userId ?? "");
+      if (user.error || !user.data) {
+        return err("User does not exist");
+      }
+
+      if (!user.data?.email) {
         return err("User does not have an email");
       }
 
+      // Create a new customer in Stripe
       const customer = await this.stripe.customers.create({
-        email: user.data.user.email,
+        email: user.data.email,
       });
 
-      const updateOrganization = await supabaseServer.client
-        .from("organization")
-        .update({ stripe_customer_id: customer.id })
-        .eq("id", this.authParams.organizationId);
+      // Update the organization with the new stripe_customer_id
+      const updateResult = await dbExecute(
+        `UPDATE organization
+         SET stripe_customer_id = $1
+         WHERE id = $2`,
+        [customer.id, this.authParams.organizationId]
+      );
 
-      if (updateOrganization.error) {
-        return err("Error updating organization");
+      if (updateResult.error) {
+        return err(`Error updating organization: ${updateResult.error}`);
       }
 
       return ok(customer.id);
+    } catch (error) {
+      return err(`Error in getOrCreateStripeCustomer: ${error}`);
     }
-
-    return ok(organization.data.stripe_customer_id);
   }
 
   public async getFreeUsage(): Promise<Result<number, string>> {
@@ -883,18 +980,21 @@ WHERE (${builtFilter.filter})`,
     const existingAddons =
       (existingMetadata.addons as Record<string, boolean>) || {};
 
-    await supabaseServer.client
-      .from("organization")
-      .update({
-        stripe_metadata: {
+    await dbExecute(
+      `UPDATE organization
+       SET stripe_metadata = $1
+       WHERE id = $2`,
+      [
+        JSON.stringify({
           ...existingMetadata,
           addons: {
             ...existingAddons,
             [productType]: true,
           },
-        },
-      })
-      .eq("id", this.authParams.organizationId);
+        }),
+        this.authParams.organizationId,
+      ]
+    );
 
     return ok(null);
   }
@@ -992,18 +1092,21 @@ WHERE (${builtFilter.filter})`,
     const existingAddons =
       (existingMetadata.addons as Record<string, boolean>) || {};
 
-    await supabaseServer.client
-      .from("organization")
-      .update({
-        stripe_metadata: {
+    await dbExecute(
+      `UPDATE organization
+       SET stripe_metadata = $1
+       WHERE id = $2`,
+      [
+        JSON.stringify({
           ...existingMetadata,
           addons: {
             ...existingAddons,
             [productType]: false,
           },
-        },
-      })
-      .eq("id", this.authParams.organizationId);
+        }),
+        this.authParams.organizationId,
+      ]
+    );
 
     return ok(null);
   }
@@ -1045,12 +1148,17 @@ WHERE (${builtFilter.filter})`,
 
       await this.stripe.subscriptions.update(subscription.id, updateParams);
 
-      await supabaseServer.client
-        .from("organization")
-        .update({
-          tier: "pro-20250202",
-        })
-        .eq("id", this.authParams.organizationId);
+      // Update the organization tier
+      const updateResult = await dbExecute(
+        `UPDATE organization
+         SET tier = $1
+         WHERE id = $2`,
+        ["pro-20250202", this.authParams.organizationId]
+      );
+
+      if (updateResult.error) {
+        return err(`Error updating organization tier: ${updateResult.error}`);
+      }
 
       return ok(null);
     } catch (error: any) {
@@ -1058,12 +1166,13 @@ WHERE (${builtFilter.filter})`,
         error.message.includes("is already using that Price") &&
         error.message.includes("an existing Subscription")
       ) {
-        await supabaseServer.client
-          .from("organization")
-          .update({
-            tier: "pro-20250202",
-          })
-          .eq("id", this.authParams.organizationId);
+        // Even if there was an error, try to update the tier
+        await dbExecute(
+          `UPDATE organization
+           SET tier = $1
+           WHERE id = $2`,
+          ["pro-20250202", this.authParams.organizationId]
+        );
       }
       return err(`Error migrating to pro: ${error.message}`);
     }
@@ -1072,17 +1181,25 @@ WHERE (${builtFilter.filter})`,
   public async getOrganization(): Promise<
     Result<Database["public"]["Tables"]["organization"]["Row"], string>
   > {
-    const organization = await supabaseServer.client
-      .from("organization")
-      .select("*")
-      .eq("id", this.authParams.organizationId)
-      .single();
+    try {
+      const result = await dbExecute<
+        Database["public"]["Tables"]["organization"]["Row"]
+      >(
+        `SELECT *
+         FROM organization
+         WHERE id = $1
+         LIMIT 1`,
+        [this.authParams.organizationId]
+      );
 
-    if (!organization.data) {
-      return err("No organization found");
+      if (result.error || !result.data || result.data.length === 0) {
+        return err(result.error ?? "No organization found");
+      }
+
+      return ok(result.data[0]);
+    } catch (error) {
+      return err(`Error fetching organization: ${error}`);
     }
-
-    return ok(organization.data);
   }
 
   public async getSubscription(): Promise<Result<Stripe.Subscription, string>> {

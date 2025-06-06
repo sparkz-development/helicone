@@ -1,6 +1,7 @@
+import { dbExecute } from "@/lib/api/db/dbExecute";
+import { HandlerWrapperOptions, withAuth } from "@/lib/api/handlerWrappers";
 import { GenerateParams } from "@/lib/api/llm/generate";
 import { getOpenAIKeyFromAdmin } from "@/lib/clients/settings";
-import { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 
@@ -9,42 +10,124 @@ let openaiClient: OpenAI | null = null;
 let isOnPrem = false;
 
 // Function to get or create the OpenAI client
-async function getOpenAIClient(): Promise<OpenAI> {
+async function getOpenAIClient(
+  orgId: string,
+  userEmail: string
+): Promise<OpenAI> {
   // Return cached client if available
   if (openaiClient) {
     return openaiClient;
   }
 
-  // Get API key from environment or admin settings
-  let apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    // apiKey = (await getOpenRouterKeyFromAdmin()) || "";
-    apiKey = (await getOpenAIKeyFromAdmin()) || "";
-    isOnPrem = true;
-  }
+  const result = await dbExecute<{
+    id: string;
+    org_id: string;
+    decrypted_provider_key: string;
+    provider_key_name: string;
+    provider_name: string;
+  }>(
+    `SELECT id, org_id, decrypted_provider_key, provider_key_name, provider_name
+     FROM decrypted_provider_keys
+     WHERE org_id = $1
+     AND soft_delete = false
+     AND provider_name = 'OpenRouter'
+     LIMIT 1`,
+    [orgId]
+  );
 
   // Create and cache the client
   openaiClient = new OpenAI({
     baseURL: isOnPrem
-      ? "https://api.openai.com/v1/"
-      : "https://openrouter.ai/api/v1/",
-    apiKey: apiKey,
+      ? "https://oai.helicone.ai/v1/"
+      : "https://openrouter.helicone.ai/api/v1/",
+    apiKey: process.env.NEXT_PUBLIC_IS_ON_PREM
+      ? await getOpenAIKeyFromAdmin()
+      : result.data?.[0]?.decrypted_provider_key || "",
+    defaultHeaders: {
+      "Helicone-Auth": `Bearer ${process.env.TEST_HELICONE_API_KEY || ""}`,
+      "Helicone-User-Id": orgId,
+      "Helicone-Property-User-Email": userEmail,
+    },
   });
 
   return openaiClient;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
+// Function to verify request is coming from a browser
+function isBrowserRequest(req: any): boolean {
+  // Check for common browser headers
+  const userAgent = req.headers["user-agent"];
+  const acceptHeader = req.headers["accept"];
+  const origin = req.headers["origin"];
+  const xRequestedWith = req.headers["x-requested-with"];
+  const referer = req.headers["referer"];
+  const heliconeClient = req.headers["x-helicone-client"];
+
+  // CORS requests from browsers always have Origin header
+  const hasOrigin = !!origin;
+
+  // Regular fetch requests typically include application/json in Accept
+  const hasAcceptJson =
+    acceptHeader && acceptHeader.includes("application/json");
+
+  // Check for the custom header we set in our client code
+  const hasClientHeader = heliconeClient === "browser";
+
+  // Check for XHR indicator
+  const isXhr = xRequestedWith === "XMLHttpRequest";
+
+  // One of these indicators should be present for browser fetch requests
+  return !!(
+    userAgent &&
+    (hasClientHeader || hasOrigin || hasAcceptJson || isXhr || referer)
+  );
+}
+
+async function handler({ req, res, userData }: HandlerWrapperOptions<any>) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  // Check if the request is coming from a browser
+  if (!isBrowserRequest(req)) {
+    return res.status(403).json({
+      error:
+        "Access denied. This endpoint can only be accessed from a browser.",
+    });
+  }
+
+  if (userData.org?.tier === "FUCK_OFF") {
+    const fakeResponse: OpenAI.Chat.Completions.ChatCompletion = {
+      id: "fake_id",
+      object: "chat.completion",
+      model: "gpt-4o-mini",
+      created: Date.now(),
+      choices: [
+        {
+          logprobs: null,
+          index: 0,
+          finish_reason: "stop",
+          message: {
+            content:
+              "Hi, there how can I help you? Are you interested in learning about Helicone?",
+            role: "assistant",
+            refusal: null,
+          },
+        },
+      ],
+      usage: {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+      },
+    };
+    return res.status(200).json(fakeResponse);
+  }
+
   try {
     // Get or initialize the OpenAI client
-    const openai = await getOpenAIClient();
+
+    const openai = await getOpenAIClient(userData.orgId, userData.user?.email);
 
     const params = req.body as GenerateParams;
     const abortController = new AbortController();
@@ -66,8 +149,10 @@ export default async function handler(
         presence_penalty: params.presencePenalty,
         stop: params.stop,
         stream: params.stream !== undefined,
+        response_format: params.response_format,
         reasoning_effort: params.reasoning_effort,
         include_reasoning: params.includeReasoning,
+        tools: params.tools,
         ...(params.schema && {
           response_format: zodResponseFormat(params.schema, "result"),
         }),
@@ -83,8 +168,6 @@ export default async function handler(
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      let fullResponse = "";
-      let fullReasoning = "";
       const stream =
         response as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
 
@@ -93,71 +176,55 @@ export default async function handler(
           // Check if request was cancelled
           if (req.headers["x-cancel"] === "1") {
             abortController.abort();
-            res.end();
-            return;
+            return; // Exit the loop and function
           }
 
-          const content = (chunk as any)?.choices?.[0]?.delta?.content;
-          const reasoning = (chunk as any)?.choices?.[0]?.delta?.reasoning;
+          // Format as Server-Sent Event (SSE)
+          const chunkString = JSON.stringify(chunk);
+          const sseFormattedChunk = `data: ${chunkString}\n\n`;
+          res.write(sseFormattedChunk);
 
-          if (params.includeReasoning) {
-            if (reasoning) {
-              fullReasoning += reasoning;
-              res.write(
-                JSON.stringify({ type: "reasoning", chunk: reasoning })
-              );
-            }
-            if (content) {
-              fullResponse += content;
-              res.write(JSON.stringify({ type: "content", chunk: content }));
-            }
-          } else if (content) {
-            fullResponse += content;
-            res.write(content); // Direct string for non-reasoning case
-          }
           // @ts-ignore - flush exists on NodeJS.ServerResponse
-          res.flush?.();
+          res.flush?.(); // Ensure chunk is sent immediately
         }
-
-        if (params.includeReasoning) {
-          res.write(
-            JSON.stringify({
-              type: "final",
-              content: fullResponse,
-              reasoning: fullReasoning,
-            })
-          );
-        }
-        res.end();
-        return;
       } catch (error) {
         // Handle stream interruption gracefully
+        console.error("[API Stream] Stream error:", error); // Log the error
         if (
           error instanceof Error &&
           (error.name === "ResponseAborted" || error.name === "AbortError")
         ) {
-          res.end();
-          return;
+          // Client likely disconnected or aborted, no need to throw further
+        } else {
+          // Rethrow other errors to be caught by the outer try-catch
+          throw error;
         }
-        throw error;
+      } finally {
+        // Ensure the response is always ended when the stream finishes or aborts/errors
+        if (!res.writableEnded) {
+          res.end();
+        }
       }
+      return; // Ensure we don't fall through to non-streaming logic
     }
 
     const resp = response as any;
-    const content = resp.choices?.[0]?.message?.content;
-    const reasoning = resp.choices?.[0]?.message?.reasoning;
+    const content = resp.choices?.[0]?.message?.content || ""; // Default to empty string
+    const reasoning = resp.choices?.[0]?.message?.reasoning || ""; // Default to empty string
+    const calls = resp.choices?.[0]?.message?.tool_calls || ""; // Default to empty string (or handle actual calls)
 
-    if (!content) {
-      throw new Error("Failed to generate response");
+    if (!content && !calls) {
+      // Check if both content and calls are missing
+      // Consider if an empty response should be an error or just empty strings
+      console.warn(
+        "[API] LLM call resulted in empty content and no tool calls."
+      );
+      // Returning empty object might be fine depending on requirements
+      // throw new Error("Failed to generate response content or tool calls");
     }
 
-    if (params.schema) {
-      const parsed = params.schema.parse(JSON.parse(content));
-      return res.json(parsed);
-    }
-
-    // For non-streaming responses, return just the content string if not including reasoning
-    return res.json(params.includeReasoning ? { content, reasoning } : content);
+    // For non-streaming, always return the full object
+    return res.json({ content, reasoning, calls });
   } catch (error) {
     if (
       error instanceof Error &&
@@ -169,3 +236,5 @@ export default async function handler(
     return res.status(500).json({ error: "Failed to generate response" });
   }
 }
+
+export default withAuth(handler);

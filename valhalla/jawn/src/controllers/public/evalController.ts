@@ -10,14 +10,14 @@ import {
   Security,
   Tags,
 } from "tsoa";
-import { Result, err, ok } from "../../lib/shared/result";
-import { JawnAuthenticatedRequest } from "../../types/request";
+import { Result, err, ok } from "../../packages/common/result";
+import { type JawnAuthenticatedRequest } from "../../types/request";
 import {
   Eval,
   EvalManager,
   ScoreDistribution,
 } from "../../managers/eval/EvalManager";
-import { FilterLeafSubset } from "../../lib/shared/filters/filterDefs";
+import { FilterLeafSubset } from "@helicone-package/filters/filterDefs";
 
 import { KVCache } from "../../lib/cache/kvCache";
 import { cacheResultCustom } from "../../utils/cacheResult";

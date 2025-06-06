@@ -1,4 +1,4 @@
-import { Result } from "../shared/result";
+import { Result } from "../../packages/common/result";
 import { DBLoggable, dbLoggableRequestFromProxyRequest } from "./DBLoggable";
 import { HeliconeProxyRequest } from "./HeliconeProxyRequest";
 import {
@@ -59,12 +59,6 @@ export async function handleProxyRequest(
     if (status === 100) {
       status = 200;
     }
-  }
-
-  if (interceptor) {
-    console.log("Interceptor created, starting stream");
-  } else {
-    console.log("No interceptor created, ending response");
   }
 
   return {

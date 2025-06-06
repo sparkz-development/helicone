@@ -1,14 +1,12 @@
 import { Body, Controller, Post, Request, Route, Tags } from "tsoa";
-import { Result, err, ok } from "../../lib/shared/result";
-import { JawnAuthenticatedRequest } from "../../types/request";
-import { supabaseServer } from "../../lib/db/supabase";
-import { getHeliconeSetting } from "../../lib/stores/settintgsStore";
-import api from "gpt-tokenizer";
+import { GET_KEY } from "../../lib/clients/constant";
+import { Result, err, ok } from "../../packages/common/result";
+import { type JawnAuthenticatedRequest } from "../../types/request";
 
 async function checkLLMGuard(text: string): Promise<{
   unsafe: boolean;
 }> {
-  const apiKey = await getHeliconeSetting("TOGETHER_API_KEY");
+  const apiKey = await GET_KEY("key:together_ai");
   if (!apiKey.data) {
     console.error("No API key found");
     return {

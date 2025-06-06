@@ -9,12 +9,12 @@ import {
   Security,
   Tags,
 } from "tsoa";
-import { Result } from "../../lib/shared/result";
+import { Result } from "../../packages/common/result";
+import type { JawnAuthenticatedRequest } from "../../types/request";
 import {
-  DataOverTimeRequest,
+  type DataOverTimeRequest,
   getXOverTime,
 } from "../../managers/helpers/getXOverTime";
-import { JawnAuthenticatedRequest } from "../../types/request";
 
 @Route("v1/dashboard")
 @Tags("Dashboard")

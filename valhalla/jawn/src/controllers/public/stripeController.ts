@@ -11,7 +11,7 @@ import {
   Tags,
 } from "tsoa";
 import { StripeManager } from "../../managers/stripe/StripeManager";
-import { JawnAuthenticatedRequest } from "../../types/request";
+import type { JawnAuthenticatedRequest } from "../../types/request";
 
 export interface UpgradeToProRequest {
   addons?: {
@@ -339,8 +339,9 @@ export class StripeController extends Controller {
     const result = await stripeManager.getSubscription();
 
     if (result.error) {
-      this.setStatus(400);
-      throw new Error(result.error);
+      // this.setStatus(400);
+      console.error(result.error);
+      return null;
     }
 
     if (!result.data) return null;

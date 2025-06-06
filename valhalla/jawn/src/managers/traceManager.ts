@@ -1,9 +1,8 @@
 import type { Log, KafkaMessageContents } from "../lib/handlers/HandlerContext";
-import { KafkaProducer } from "../lib/clients/KafkaProducer";
-import { AuthParams } from "../lib/db/supabase";
+import { HeliconeQueueProducer } from "../lib/clients/HeliconeQuequeProducer";
 import { S3Client } from "../lib/shared/db/s3Client";
 import { randomUUID } from "crypto";
-
+import { AuthParams } from "../packages/common/auth/types";
 export class TraceManager {
   private s3Client: S3Client;
   constructor() {
@@ -158,7 +157,7 @@ export class TraceManager {
   }
 
   private async sendLogToKafka(kafkaMessage: KafkaMessageContents) {
-    const kafkaProducer = new KafkaProducer();
+    const kafkaProducer = new HeliconeQueueProducer();
     await kafkaProducer.sendMessages(
       [kafkaMessage],
       "request-response-logs-prod"

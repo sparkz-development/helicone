@@ -1,19 +1,12 @@
-import { SupabaseClient, User } from "@supabase/supabase-js";
-
-import { FilterNode } from "../../../services/lib/filters/filterDefs";
-import { Result } from "../../result";
+import { FilterNode } from "@helicone-package/filters/filterDefs";
+import { Result } from "@/packages/common/result";
 import {
   isValidTimeIncrement,
   isValidTimeZoneDifference,
 } from "../../sql/timeHelpers";
 import { dbExecute } from "../db/dbExecute";
 import { DataOverTimeRequest } from "./timeDataHandlerWrapper";
-import { buildFilterWithAuth } from "../../../services/lib/filters/filters";
-
-export interface AuthClient {
-  client: SupabaseClient;
-  user: User;
-}
+import { buildFilterWithAuth } from "@helicone-package/filters/filters";
 
 export interface ModelUsageOverTime {
   created_at_trunc: Date;

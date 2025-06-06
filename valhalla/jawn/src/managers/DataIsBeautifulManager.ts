@@ -17,8 +17,8 @@ import {
   modelNames,
 } from "../controllers/public/dataIsBeautifulController";
 import { clickhouseDb } from "../lib/db/ClickhouseWrapper";
-import { Result, err, ok } from "../lib/shared/result";
-import { clickhousePriceCalc } from "../packages/cost";
+import { Result, err, ok } from "../packages/common/result";
+import { clickhousePriceCalc } from "@helicone-package/cost";
 
 function andCondition(...conditions: string[]): string {
   return conditions.filter(Boolean).join(" AND ");

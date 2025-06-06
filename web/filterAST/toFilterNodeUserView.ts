@@ -4,7 +4,7 @@ import {
   FilterNode,
   FilterBranch,
   FilterLeaf,
-} from "@/services/lib/filters/filterDefs";
+} from "@helicone-package/filters/filterDefs";
 import {
   FilterExpression,
   ConditionExpression,
@@ -26,6 +26,7 @@ const operatorMap: Record<string, string> = {
   ilike: "ilike",
   contains: "contains",
   is: "equals", // Boolean operators use 'equals' in legacy format
+  is_null: "null",
 };
 
 /**
@@ -42,6 +43,8 @@ function getFieldType(
     "average_tokens_per_request",
     "total_completion_tokens",
     "total_prompt_token",
+    "prompt_tokens",
+    "completion_tokens",
     "cost",
   ];
 

@@ -11,25 +11,127 @@ import {
   Security,
   Tags,
 } from "tsoa";
-import { supabaseServer } from "../../lib/db/supabase";
-import { err, ok, Result } from "../../lib/shared/result";
-import {
+import { err, ok, Result } from "../../packages/common/result";
+import { OrganizationManager } from "../../managers/organization/OrganizationManager";
+import type {
   NewOrganizationParams,
   OnboardingStatus,
   OrganizationFilter,
   OrganizationLayout,
-  OrganizationManager,
   OrganizationMember,
   OrganizationOwner,
   UpdateOrganizationParams,
 } from "../../managers/organization/OrganizationManager";
 import { StripeManager } from "../../managers/stripe/StripeManager";
-import { JawnAuthenticatedRequest } from "../../types/request";
+import type { JawnAuthenticatedRequest } from "../../types/request";
+import { dbExecute } from "../../lib/shared/db/dbExecute";
+import { Database } from "../../lib/db/database.types";
+import { RequestWrapper } from "../../lib/requestWrapper";
+import { Request as ExpressRequest } from "express";
+import { getHeliconeAuthClient } from "../../packages/common/auth/server/AuthClientFactory";
 
 @Route("v1/organization")
 @Tags("Organization")
 @Security("api_key")
 export class OrganizationController extends Controller {
+  @Get("/")
+  public async getOrganizations(@Request() req: ExpressRequest): Promise<
+    Result<
+      (Database["public"]["Tables"]["organization"]["Row"] & {
+        role: string;
+      })[],
+      string
+    >
+  > {
+    const request = new RequestWrapper(req);
+
+    const authHeader = request.authHeader();
+    if (authHeader.error) {
+      return err(authHeader.error);
+    }
+    if (!authHeader.data) {
+      return err("User not found");
+    }
+
+    if (authHeader.data._type !== "jwt") {
+      return err("Invalid auth header");
+    }
+
+    const authParams = await getHeliconeAuthClient().getUser(
+      authHeader.data,
+      req.headers
+    );
+    if (authParams.error || !authParams.data) {
+      return err(authParams.error ?? "User not found");
+    }
+
+    const result = await dbExecute<
+      Database["public"]["Tables"]["organization"]["Row"] & {
+        role: string;
+      }
+    >(
+      `SELECT DISTINCT ON (organization.id) organization.*, organization_member.org_role
+      FROM organization 
+      left join organization_member on organization.id = organization_member.organization
+      WHERE soft_delete = false
+      and (organization_member.member = $1 or organization.owner = $1)
+      `,
+      [authParams.data.id]
+    );
+    if (result.error) {
+      this.setStatus(500);
+      return err(result.error ?? "Error getting organizations");
+    }
+
+    return ok(result.data!);
+  }
+
+  @Get("/{organizationId}")
+  public async getOrganization(
+    @Path() organizationId: string,
+    @Request() request: JawnAuthenticatedRequest
+  ): Promise<
+    Result<Database["public"]["Tables"]["organization"]["Row"], string>
+  > {
+    const result = await dbExecute<
+      Database["public"]["Tables"]["organization"]["Row"]
+    >(
+      `SELECT organization.* FROM organization 
+      left join organization_member on organization.id = organization_member.organization
+      WHERE soft_delete = false
+      and (organization_member.member = $1 or organization.owner = $1)
+      and organization.id = $2`,
+      [request.authParams.userId, organizationId]
+    );
+
+    if (result.error) {
+      this.setStatus(500);
+      return err(result.error ?? "Error getting organization");
+    }
+    const org = result.data?.at(0);
+    if (!org) {
+      this.setStatus(404);
+      return err("Organization not found");
+    }
+
+    return ok(org);
+  }
+
+  @Get("/reseller/{resellerId}")
+  public async getReseller(
+    @Path() resellerId: string,
+    @Request() request: JawnAuthenticatedRequest
+  ) {
+    const result = await dbExecute<
+      Database["public"]["Tables"]["organization"]["Row"]
+    >(
+      `SELECT * FROM organization WHERE reseller_id = $1 and soft_delete = false`,
+      [resellerId]
+    );
+
+    return ok(result);
+  }
+
   @Post("/user/accept_terms")
   public async acceptTerms(
     @Request() request: JawnAuthenticatedRequest
@@ -38,17 +140,19 @@ export class OrganizationController extends Controller {
       return err("User not found");
     }
 
-    const result = await supabaseServer.client.auth.admin.updateUserById(
-      request.authParams.userId,
-      {
-        user_metadata: {
-          accepted_terms_date: new Date().toISOString(),
-        },
-      }
+    const result = await dbExecute(
+      `UPDATE auth.users
+       SET raw_user_meta_data = jsonb_set(
+         COALESCE(raw_user_meta_data, '{}'::jsonb),
+         '{accepted_terms_date}',
+         $1::jsonb
+       )
+       WHERE id = $2`,
+      [JSON.stringify(new Date().toISOString()), request.authParams.userId]
     );
 
     if (result.error) {
-      return err(result.error.message);
+      return err(result.error);
     }
 
     return ok(null);
@@ -100,12 +204,16 @@ export class OrganizationController extends Controller {
     requestBody: {},
     @Request() request: JawnAuthenticatedRequest
   ): Promise<Result<null, string>> {
-    await supabaseServer.client
-      .from("organization")
-      .update({
-        has_onboarded: true,
-      })
-      .eq("id", request.authParams.organizationId);
+    const { error } = await dbExecute(
+      `UPDATE organization
+       SET has_onboarded = true
+       WHERE id = $1`,
+      [request.authParams.organizationId]
+    );
+
+    if (error) {
+      return err(error);
+    }
 
     return ok(null);
   }
@@ -139,7 +247,7 @@ export class OrganizationController extends Controller {
       return ok(null); // Silently succeed if member already exists
     }
 
-    if (org.data.tier === "enterprise" || "team-20250130") {
+    if (org.data.tier === "enterprise" || org.data.tier === "team-20250130") {
       // Enterprise tier: Proceed to add member without additional checks
     } else if (
       org.data.tier === "pro-20240913" ||
@@ -366,13 +474,14 @@ export class OrganizationController extends Controller {
 
     const org = await organizationManager.getOrg();
     if (org.error || !org.data) {
-      return err(org.error?.message ?? "Error getting organization");
+      return err(org.error ?? "Error getting organization");
     }
 
     if (
       memberCount.data > 0 &&
       org.data.tier != "free" &&
-      org.data.tier != "team-20250130"
+      org.data.tier != "team-20250130" &&
+      org.data.tier != "enterprise"
     ) {
       const userCount = await stripeManager.updateProUserCount(
         memberCount.data - 1
@@ -402,9 +511,29 @@ export class OrganizationController extends Controller {
   ): Promise<Result<null, string>> {
     const organizationManager = new OrganizationManager(request.authParams);
 
-    const result = await organizationManager.setupDemo(
-      request.authParams.organizationId ?? ""
+    const demoOrg = await dbExecute<
+      Database["public"]["Tables"]["organization"]["Row"]
+    >(
+      `SELECT DISTINCT ON (organization.id) organization.* 
+      FROM organization 
+      left join organization_member on organization.id = organization_member.organization
+      WHERE tier = 'demo' 
+      and coalesce((onboarding_status->>'demoDataSetup')::boolean, false) != true
+      and (organization_member.member = $1 or organization.owner = $1)
+      limit 1
+      `,
+      [request.authParams.userId]
     );
+
+    if (demoOrg.error || !demoOrg.data) {
+      return err(demoOrg.error ?? "Error getting demo organization");
+    }
+
+    if (demoOrg.data.length === 0) {
+      return err("No demo organization found");
+    }
+
+    const result = await organizationManager.setupDemo(demoOrg.data[0].id);
     if (result.error) {
       this.setStatus(500);
       console.error(result.error);

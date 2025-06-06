@@ -11,29 +11,34 @@ import {
   Route,
   Security,
   Tags,
+  Query,
 } from "tsoa";
 import { clickhouseDb } from "../../lib/db/ClickhouseWrapper";
 import { prepareRequestAzure } from "../../lib/experiment/requestPrep/azure";
 import { dbExecute } from "../../lib/shared/db/dbExecute";
-import { JawnAuthenticatedRequest } from "../../types/request";
-import { Setting, SettingName } from "../../utils/settings";
+import type { JawnAuthenticatedRequest } from "../../types/request";
+import { Setting } from "../../utils/settings";
+import type { SettingName } from "../../utils/settings";
+import Stripe from "stripe";
+import { AdminManager } from "../../managers/admin/AdminManager";
 
 export const authCheckThrow = async (userId: string | undefined) => {
   if (!userId) {
     throw new Error("Unauthorized");
   }
 
-  // Replace Supabase call with dbExecute
   const result = await dbExecute<{ user_id: string }>(
     "SELECT user_id FROM admins WHERE user_id = $1",
     [userId]
   );
 
   if (result.error) {
-    throw new Error(result.error);
+    throw new Error(result.error || "Error checking authorization");
   }
 
-  const hasAdmin = result.data?.map((admin) => admin.user_id).includes(userId);
+  const hasAdmin = result.data
+    ?.map((admin) => admin.user_id)
+    .includes(userId as string);
 
   if (!hasAdmin) {
     throw new Error("Unauthorized");
@@ -515,7 +520,7 @@ export class AdminController extends Controller {
       user_id: string | null;
     }>(
       `
-      SELECT user_email, id, created_ai, user_id FROM
+      SELECT user_email, id, created_at, user_id FROM
       admins
       `,
       []
@@ -746,6 +751,59 @@ export class AdminController extends Controller {
     return JSON.parse(JSON.stringify(settings)) as Setting;
   }
 
+  @Get("/settings")
+  public async getSettings(
+    @Request() request: JawnAuthenticatedRequest
+  ): Promise<
+    {
+      name: string;
+      settings: any;
+    }[]
+  > {
+    await authCheckThrow(request.authParams.userId);
+
+    const settings = await dbExecute<{
+      name: string;
+      settings: Setting;
+    }>(
+      `
+      SELECT name, settings FROM helicone_settings
+      `,
+      []
+    );
+
+    return (
+      settings.data?.map((setting) => ({
+        name: setting.name,
+        settings: JSON.parse(JSON.stringify(setting.settings)) as Setting,
+      })) ?? []
+    );
+  }
+
+  @Post("/settings")
+  public async upsertSetting(
+    @Request() request: JawnAuthenticatedRequest,
+    @Body()
+    body: {
+      name: string;
+      settings: any;
+    }
+  ): Promise<void> {
+    await authCheckThrow(request.authParams.userId);
+
+    const { error } = await dbExecute(
+      `
+      INSERT INTO helicone_settings (name, settings) VALUES ($1, $2)
+      ON CONFLICT (name) DO UPDATE SET settings = $2
+      `,
+      [body.name, JSON.stringify(body.settings)]
+    );
+
+    if (error) {
+      throw new Error(error);
+    }
+  }
+
   @Post("/azure/run-test")
   public async azureTest(
     @Request() request: JawnAuthenticatedRequest,
@@ -773,45 +831,6 @@ export class AdminController extends Controller {
         body: JSON.stringify(body.requestBody),
       },
     };
-  }
-
-  @Post("/settings")
-  public async updateSetting(
-    @Request() request: JawnAuthenticatedRequest,
-    @Body()
-    body: {
-      name: SettingName;
-      settings: Setting;
-    }
-  ): Promise<void> {
-    await authCheckThrow(request.authParams.userId);
-
-    const { data: currentSettings } = await dbExecute<{
-      settings: Setting;
-    }>(
-      `
-      SELECT settings FROM helicone_settings WHERE name = $1
-      `,
-      [body.name]
-    );
-
-    if (!currentSettings) {
-      await dbExecute(
-        `
-        INSERT INTO helicone_settings (name, settings) VALUES ($1, $2)
-        `,
-        [body.name, JSON.parse(JSON.stringify(body.settings))]
-      );
-    } else {
-      await dbExecute(
-        `
-        UPDATE helicone_settings SET settings = $1 WHERE name = $2
-        `,
-        [JSON.parse(JSON.stringify(body.settings)), body.name]
-      );
-    }
-
-    return;
   }
 
   @Post("/orgs/query")
@@ -974,15 +993,17 @@ export class AdminController extends Controller {
     await authCheckThrow(request.authParams.userId);
     const { orgId, adminIds } = body;
 
-    const { error } = await dbExecute(
-      `
+    for (const adminId of adminIds) {
+      const { error } = await dbExecute(
+        `
       INSERT INTO organization_member (organization, member, org_role) VALUES ($1, $2, $3)
       `,
-      [orgId, adminIds, "admin"]
-    );
+        [orgId, adminId, "admin"]
+      );
 
-    if (error) {
-      throw new Error(error);
+      if (error) {
+        throw new Error(error);
+      }
     }
   }
 
@@ -1267,5 +1288,33 @@ export class AdminController extends Controller {
     });
 
     return { organizations };
+  }
+
+  /**
+   * Get all subscription data, invoices, and discounts for the admin projections page
+   * Uses caching to minimize API calls to Stripe
+   */
+  @Get("/subscription-data")
+  public async getSubscriptionData(
+    @Request() request: JawnAuthenticatedRequest,
+    @Query() forceRefresh?: boolean
+  ): Promise<{
+    subscriptions: Stripe.Subscription[];
+    invoices: Stripe.Invoice[];
+    discounts: Record<string, Stripe.Discount>;
+    upcomingInvoices: Stripe.UpcomingInvoice[];
+  }> {
+    await authCheckThrow(request.authParams.userId);
+
+    // Use AdminManager to handle Stripe API calls with rate limiting and caching
+    const adminManager = new AdminManager(request.authParams);
+    const result = await adminManager.getSubscriptionData(forceRefresh);
+
+    if (result.error || !result.data) {
+      throw new Error(result.error || "No subscription data returned");
+    }
+
+    // Return the data
+    return result.data;
   }
 }

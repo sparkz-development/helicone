@@ -6,7 +6,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { generateAPIKeyHelper } from "@/utils/generateAPIKeyHelper";
-import { useUser } from "@supabase/auth-helpers-react";
 import { useOrg } from "@/components/layout/org/organizationContext";
 import useNotification from "@/components/shared/notification/useNotification";
 import { Alert } from "@/components/ui/alert";
@@ -27,10 +26,11 @@ import {
   Loader,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Result } from "@/lib/result";
+import { Result } from "@/packages/common/result";
 import { useRouter } from "next/navigation";
 import { useOrgOnboarding } from "@/services/hooks/useOrgOnboarding";
 import { H1, Small, Muted } from "@/components/ui/typography";
+import { useHeliconeAuthClient } from "@/packages/common/auth/client/AuthClientFactory";
 
 // Create a singleton highlighter instance
 const highlighterPromise = createHighlighter({
@@ -70,7 +70,7 @@ export function CodeIntegrationPage({
   defaultProvider = "openai",
   defaultLanguage = "typescript",
 }: CodeIntegrationPageProps) {
-  const user = useUser();
+  const { user } = useHeliconeAuthClient();
   const { setNotification } = useNotification();
   const org = useOrg();
   const router = useRouter();
@@ -86,9 +86,9 @@ export function CodeIntegrationPage({
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   // Add the event listening query
-  const { data: hasEvent } = useQuery<Result<boolean, string>, Error>(
-    ["hasOnboarded"],
-    async () => {
+  const { data: hasEvent } = useQuery<Result<boolean, string>, Error>({
+    queryKey: ["hasOnboarded"],
+    queryFn: async () => {
       const response = await fetch("/api/user/checkOnboarded", {
         method: "POST",
         headers: {
@@ -102,12 +102,10 @@ export function CodeIntegrationPage({
       }
       return jsonData;
     },
-    {
-      refetchOnWindowFocus: false,
-      refetchInterval: 3000,
-      enabled: true,
-    }
-  );
+    refetchOnWindowFocus: false,
+    refetchInterval: 3000,
+    enabled: true,
+  });
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -144,7 +142,7 @@ export function CodeIntegrationPage({
     };
 
     generateKey();
-  }, [user, org?.currentOrg?.organization_type, apiKey, setNotification]);
+  }, [org?.currentOrg]);
 
   useEffect(() => {
     const updateHighlightedCode = async () => {
