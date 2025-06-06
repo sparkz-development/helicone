@@ -6,8 +6,9 @@ echo "Starting safe synchronization process..."
 # Parse command line options
 FORCE_PUSH=false
 CONFLICT_STRATEGY="abort"  # Options: abort, manual, force
+SKIP_UPSTREAM_UPDATE=false
 
-while getopts "fc:hp:" opt; do
+while getopts "fc:hp:s" opt; do
   case $opt in
     f)
       FORCE_PUSH=true
@@ -18,15 +19,20 @@ while getopts "fc:hp:" opt; do
       echo "Conflict strategy set to: $CONFLICT_STRATEGY"
       ;;
     h)
-      echo "Usage: ./sync_with_helicone.sh [-f] [-c conflict_strategy] [-p packages]"
+      echo "Usage: ./sync_with_helicone.sh [-f] [-c conflict_strategy] [-p packages] [-s]"
       echo "  -f                  Force push changes (use with caution)"
       echo "  -c conflict_strategy  How to handle conflicts: abort (default), manual, force"
       echo "  -p packages         Space-separated packages to sync (default: cost llm-mapper)"
+      echo "  -s                  Skip updating Helicone fork from upstream"
       echo "  -h                  Show this help message"
       exit 0
       ;;
     p)
       PACKAGES_TO_SYNC=$OPTARG
+      ;;
+    s)
+      SKIP_UPSTREAM_UPDATE=true
+      echo "Skipping update from upstream Helicone repository"
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -39,6 +45,35 @@ done
 LOG_FILE="sync_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "Logging to $LOG_FILE"
+
+# Update Helicone fork from upstream (unless skipped)
+if ! $SKIP_UPSTREAM_UPDATE; then
+  echo "Updating Helicone fork from upstream..."
+  
+  # Check if upstream remote exists, add if it doesn't
+  if ! git remote | grep -q "upstream"; then
+    echo "Adding upstream remote..."
+    git remote add upstream https://github.com/Helicone/helicone.git
+  fi
+  
+  # Fetch from upstream
+  echo "Fetching from upstream Helicone repository..."
+  git fetch upstream
+  
+  # Store current branch
+  CURRENT_BRANCH=$(git branch --show-current)
+  
+  # Merge upstream changes into current branch
+  echo "Merging upstream changes into current branch ($CURRENT_BRANCH)..."
+  if ! git merge upstream/$CURRENT_BRANCH; then
+    echo "WARNING: Merge conflicts detected when updating from upstream."
+    echo "Please resolve conflicts manually before running this script again."
+    echo "You can also run with -s flag to skip the upstream update step."
+    exit 1
+  fi
+  
+  echo "Successfully updated from upstream Helicone repository."
+fi
 
 # Create a temporary directory for the sync
 TEMP_DIR=$(mktemp -d)
