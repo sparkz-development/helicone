@@ -105,7 +105,7 @@ if [ -n "$PACKAGES_TO_SYNC" ]; then
   echo "Using packages from environment variable: ${PACKAGES_ARRAY[*]}"
 else
   # Default packages if not specified
-  PACKAGES_ARRAY=("cost" "llm-mapper")
+  PACKAGES_ARRAY=("cost" "llm-mapper" "common" "prompts" "pricing")
   echo "Using default packages: ${PACKAGES_ARRAY[*]}"
 fi
 
@@ -139,9 +139,20 @@ for pkg in "${PACKAGES_ARRAY[@]}"; do
   fi
 done
 
+# Build the project to update dist/ directory
+echo "Building the project to update dist/ directory..."
+cd "$TEMP_DIR/target"
+
+# Run pnpm build
+echo "Running pnpm install and build..."
+if pnpm install && pnpm run build; then
+  echo "Build successful!"
+else
+  echo "WARNING: Build failed. Continuing with sync process..."
+fi
+
 # Commit and push changes
 echo "Committing and pushing changes..."
-cd "$TEMP_DIR/target"
 
 # Stage the changes
 git add .
