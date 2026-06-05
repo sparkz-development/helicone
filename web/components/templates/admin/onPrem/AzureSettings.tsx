@@ -65,8 +65,8 @@ export const AzureSettings = () => {
         temperature: 1,
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   const [isValidJson, setIsValidJson] = useState<boolean>(true);
@@ -85,7 +85,7 @@ export const AzureSettings = () => {
   return (
     <div className="flex flex-col space-y-4 p-6">
       <h1 className="text-2xl font-semibold">On Prem Settings</h1>
-      <div className="flex flex-col space-y-8 max-w-4xl">
+      <div className="flex max-w-4xl flex-col space-y-8">
         <Card className="bg-slate-200">
           <CardHeader>
             <CardTitle>Azure Settings (For experiments)</CardTitle>
@@ -171,7 +171,6 @@ export const AzureSettings = () => {
                       setNotification("Settings saved", "success");
                     } else {
                       setNotification("Failed to save settings", "error");
-                      console.log(s.response);
                     }
                   });
               }}
@@ -209,7 +208,6 @@ export const AzureSettings = () => {
                       setNotification("Test completed", "success");
                     } else {
                       setNotification("Test failed", "error");
-                      console.log(s.response);
                     }
                   });
               }}
@@ -226,23 +224,23 @@ export const AzureSettings = () => {
                   <div className="space-y-2">
                     <h3 className="text-xl font-semibold">Fetch parameters</h3>
                     <h4 className="text-lg font-medium">URL</h4>
-                    <pre className="bg-muted p-4 rounded-lg">
+                    <pre className="rounded-lg bg-muted p-4">
                       {testResult.fetchParams.url}
                     </pre>
 
                     <h4 className="text-lg font-medium">Headers</h4>
-                    <pre className="bg-muted p-4 rounded-lg">
+                    <pre className="rounded-lg bg-muted p-4">
                       {JSON.stringify(testResult.fetchParams.headers, null, 2)}
                     </pre>
 
                     <h4 className="text-lg font-medium">Body</h4>
-                    <pre className="bg-muted p-4 rounded-lg">
+                    <pre className="rounded-lg bg-muted p-4">
                       {(() => {
                         try {
                           return JSON.stringify(
                             JSON.parse(testResult.fetchParams.body),
                             null,
-                            2
+                            2,
                           );
                         } catch (e) {
                           return testResult.fetchParams.body;
@@ -253,13 +251,13 @@ export const AzureSettings = () => {
 
                   <div className="space-y-2">
                     <h3 className="text-xl font-semibold">Result</h3>
-                    <pre className="bg-muted p-4 rounded-lg">
+                    <pre className="rounded-lg bg-muted p-4">
                       {(() => {
                         try {
                           return JSON.stringify(
                             JSON.parse(testResult.resultText),
                             null,
-                            2
+                            2,
                           );
                         } catch (e) {
                           return testResult.resultText;

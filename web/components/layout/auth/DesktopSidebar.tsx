@@ -1,22 +1,40 @@
 import { ProFeatureWrapper } from "@/components/shared/ProBlockerComponents/ProFeatureWrapper";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useLocalStorage } from "@/services/hooks/localStorage";
+import { OnboardingState } from "@/services/hooks/useOrgOnboarding";
 import {
   Bars3Icon,
   ChevronLeftIcon,
   ChevronRightIcon,
 } from "@heroicons/react/24/outline";
-import { Rocket } from "lucide-react";
+import {
+  MessageCircle,
+  Rocket,
+  Settings,
+  Coins,
+  FileText,
+  ArrowUpRight,
+  AlertTriangle,
+} from "lucide-react";
 import { useTheme } from "next-themes";
+import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ChangelogModal from "../ChangelogModal";
 import { useOrg } from "../org/organizationContext";
 import OrgDropdown from "../orgDropdown";
 import SidebarHelpDropdown from "../SidebarHelpDropdown";
 import NavItem from "./NavItem";
 import { ChangelogItem } from "./types";
+import SidebarQuickstepCard from "../SidebarQuickstartCard";
+import { useHeliconeAgent } from "@/components/templates/agent/HeliconeAgentContext";
+import { useCredits } from "@/services/hooks/useCredits";
+
+// Sidebar width constants
+const SIDEBAR_WIDTH_COLLAPSED = "w-12"; // 48px
+const SIDEBAR_WIDTH_EXPANDED = "w-52"; // 208px
 
 export interface NavigationItem {
   name: string;
@@ -39,17 +57,23 @@ const DesktopSidebar = ({
   NAVIGATION,
   sidebarRef,
 }: SidebarProps) => {
+  const { agentChatOpen, setAgentChatOpen } = useHeliconeAgent();
   const orgContext = useOrg();
   const router = useRouter();
+  const onboardingStatus = orgContext?.currentOrg
+    ?.onboarding_status as unknown as OnboardingState;
+
+  // Fetch credit balance - defaults to 0 if it fails
+  const { data: creditData } = useCredits();
 
   const [isCollapsed, setIsCollapsed] = useLocalStorage(
     "isSideBarCollapsed",
-    false
+    false,
   );
 
   const [expandedItems, setExpandedItems] = useLocalStorage<string[]>(
     "expandedItems",
-    ["Developer", "Segments", "Improve"]
+    ["Developer", "Segments", "Improve", "Monitor"],
   );
 
   const toggleExpand = (name: string) => {
@@ -57,12 +81,12 @@ const DesktopSidebar = ({
     setExpandedItems(
       prev.includes(name)
         ? prev.filter((item) => item !== name)
-        : [...prev, name]
+        : [...prev, name],
     );
   };
   const largeWith = useMemo(
-    () => cn(isCollapsed ? "w-16" : "w-52"),
-    [isCollapsed]
+    () => cn(isCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED),
+    [isCollapsed],
   );
 
   const NAVIGATION_ITEMS = useMemo(() => {
@@ -91,6 +115,16 @@ const DesktopSidebar = ({
       return item;
     });
   }, [NAVIGATION, isCollapsed, expandedItems]);
+
+  // Check if free tier limit is exceeded for the current month
+  const isFreeLimitExceeded = useMemo(() => {
+    const freeLimitMonth = orgContext?.currentOrg?.free_limit_exceeded;
+    if (!freeLimitMonth || orgContext?.currentOrg?.tier !== "free") {
+      return false;
+    }
+    const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    return freeLimitMonth === currentMonth;
+  }, [orgContext?.currentOrg?.free_limit_exceeded, orgContext?.currentOrg?.tier]);
 
   const navItemsRef = useRef<HTMLDivElement>(null);
   const [canShowInfoBox, setCanShowInfoBox] = useState(false);
@@ -129,10 +163,10 @@ const DesktopSidebar = ({
       }
     };
 
-    const sidebarWidth = isCollapsed ? 64 : 208;
+    const sidebarWidth = isCollapsed ? 48 : 208;
     document.documentElement.style.setProperty(
       "--sidebar-width",
-      `${sidebarWidth}px`
+      `${sidebarWidth}px`,
     );
 
     // Add event listeners
@@ -160,7 +194,7 @@ const DesktopSidebar = ({
 
   const [modalOpen, setModalOpen] = useState(false);
   const [changelogToView, setChangelogToView] = useState<ChangelogItem | null>(
-    null
+    null,
   );
 
   const handleChangelogClick = (changelog: ChangelogItem) => {
@@ -180,7 +214,7 @@ const DesktopSidebar = ({
   return (
     <>
       {/* Mobile hamburger menu */}
-      <div className="sticky top-0 z-20 px-2 py-3 flex md:hidden flex-shrink-0 bg-slate-100 dark:bg-black border-b border-slate-300 dark:border-slate-70">
+      <div className="dark:border-slate-70 sticky top-0 z-20 flex flex-shrink-0 border-b border-slate-300 bg-slate-100 px-2 py-3 dark:bg-black md:hidden">
         <Button
           variant="ghost"
           size="icon"
@@ -197,7 +231,7 @@ const DesktopSidebar = ({
       {/* Mobile drawer overlay */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+          className="fixed inset-0 z-40 bg-black bg-opacity-50 md:hidden"
           onClick={() => {
             setIsCollapsed(false);
             setIsMobileMenuOpen(false);
@@ -210,7 +244,7 @@ const DesktopSidebar = ({
         className={cn(
           "hidden md:block",
           largeWith,
-          "transition-all duration-300"
+          "transition-all duration-300",
         )}
       />
 
@@ -218,20 +252,19 @@ const DesktopSidebar = ({
       <div
         ref={sidebarRef}
         className={cn(
-          "flex flex-col z-50 transition-all duration-300 h-screen bg-sidebar-background",
+          "z-50 flex h-screen flex-col bg-sidebar-background transition-all duration-300",
           largeWith,
-          "fixed top-0 left-0",
+          "fixed left-0 top-0",
           "md:translate-x-0", // Always visible on desktop
           isMobileMenuOpen
             ? "translate-x-0"
-            : "-translate-x-full md:translate-x-0"
+            : "-translate-x-full md:translate-x-0",
         )}
       >
-        <div className="w-full flex flex-col h-full border-r border-slate-200 dark:border-slate-800">
+        <div className="flex h-full w-full flex-col border-r border-slate-200 dark:border-slate-800">
           {/* Collapse button and OrgDropdown */}
           <div
-            className={`flex flex-row items-center p-2.5 
-              ${isCollapsed ? "justify-center" : "justify-between"}`}
+            className={`flex h-16 flex-row items-center border-b border-slate-200 px-2 dark:border-slate-800 ${isCollapsed ? "justify-center" : "justify-between"}`}
           >
             {/* - OrgDropdown */}
             {!isCollapsed && <OrgDropdown />}
@@ -241,7 +274,7 @@ const DesktopSidebar = ({
               variant="ghost"
               size="icon"
               onClick={handleCollapseToggle}
-              className="flex justify-center items-center hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0"
+              className="flex h-8 w-8 shrink-0 items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800"
             >
               {isCollapsed ? (
                 <ChevronRightIcon className="h-4 w-4" />
@@ -252,37 +285,43 @@ const DesktopSidebar = ({
           </div>
 
           {/* Main content area */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <div className="flex-1 overflow-y-auto flex flex-col justify-between h-full mb-2">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ScrollArea
+              className="flex h-full flex-1 flex-col"
+              width="thin"
+              type="scroll"
+            >
               {/* Navigation items */}
               <div className="flex flex-col">
-                {((!isCollapsed &&
-                  orgContext?.currentOrg?.organization_type === "reseller") ||
-                  orgContext?.isResellerOfCurrentCustomerOrg) && (
-                  <div className="flex w-full justify-center px-5 py-2">
-                    <Button
-                      variant="outline"
-                      className="w-full dark:text-slate-400"
-                      size="sm_sleek"
-                      onClick={() => {
-                        router.push("/enterprise/portal");
-                        if (
-                          orgContext.currentOrg?.organization_type ===
-                            "customer" &&
-                          orgContext.currentOrg?.reseller_id
-                        ) {
-                          orgContext.setCurrentOrg(
-                            orgContext.currentOrg.reseller_id
-                          );
-                        }
-                      }}
-                    >
-                      {orgContext.currentOrg?.organization_type === "customer"
-                        ? "Back to Portal"
-                        : "Customer Portal"}
-                    </Button>
-                  </div>
-                )}
+                {/* Free Limit Warning - Show at top when exceeded */}
+                {isFreeLimitExceeded && !isCollapsed && (
+                    <div className="mx-2 mb-2 mt-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+                      <div className="flex items-center gap-2 text-destructive">
+                        <AlertTriangle size={16} />
+                        <span className="text-sm font-medium">
+                          Free limit reached
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Request/response bodies are no longer being stored.
+                        Upgrade to continue logging full data.
+                      </p>
+                      <Link href="/settings/billing">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 w-full"
+                        >
+                          Upgrade Now
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+
+                {/* Quickstart Card - Only show if organization hasn't integrated */}
+                {onboardingStatus?.hasCompletedQuickstart === false &&
+                  !isCollapsed && <SidebarQuickstepCard />}
+
                 <div
                   ref={navItemsRef}
                   data-collapsed={isCollapsed}
@@ -315,10 +354,10 @@ const DesktopSidebar = ({
                           });
                         }}
                         className={cn(
-                          "mt-10 gap-1 text-white text-large font-medium leading-normal tracking-normal bg-sky-500 hover:bg-sky-600 transition-colors",
+                          "text-large mt-10 gap-1 bg-sky-500 font-medium leading-normal tracking-normal text-white transition-colors hover:bg-sky-600",
                           isCollapsed
                             ? "h-8 w-8 px-2"
-                            : "h-[46px] w-full px-6 md:px-4"
+                            : "h-[46px] w-full px-6 md:px-4",
                         )}
                         variant="action"
                       >
@@ -336,55 +375,178 @@ const DesktopSidebar = ({
                     )}
                   </nav>
                 </div>
-              </div>
 
-              {/* InfoBox */}
-              {canShowInfoBox &&
-                orgContext?.currentOrg?.tier === "free" &&
-                (isCollapsed ? (
-                  <div className="px-2 py-2">
-                    <ProFeatureWrapper featureName="pro" enabled={false}>
-                      <Button
-                        variant="action"
-                        size="icon"
-                        className="w-full h-8 bg-sky-500 hover:bg-sky-600 text-white"
-                      >
-                        <Rocket className="h-4 w-4" />
-                      </Button>
-                    </ProFeatureWrapper>
-                  </div>
-                ) : (
-                  <div className="bg-slate-50 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 flex flex-col md:flex-row md:gap-2 gap-4 justify-between md:justify-center md:items-center items-start px-3 py-2 mt-2 mx-2 mb-4 font-medium">
-                    <div className="flex flex-col gap-2">
-                      <h1 className="text-xs text-start tracking-tight leading-[1.35rem]">
-                        Unlock more features with{" "}
-                        <span className="font-bold text-sky-500">Pro</span>. No
-                        usage limits, sessions, user analytics, custom
-                        properties and much more.
-                      </h1>
+                {/* InfoBox */}
+                {canShowInfoBox &&
+                  orgContext?.currentOrg?.tier === "free" &&
+                  !isFreeLimitExceeded &&
+                  (isCollapsed ? (
+                    <div className="px-2 py-2">
                       <ProFeatureWrapper featureName="pro" enabled={false}>
                         <Button
                           variant="action"
-                          className="w-full text-xs h-8 bg-sky-500 hover:bg-sky-600 text-white"
+                          size="icon"
+                          className="h-8 w-full bg-sky-500 text-white hover:bg-sky-600"
                         >
-                          Start Pro Free Trial
+                          <Rocket className="h-4 w-4" />
                         </Button>
                       </ProFeatureWrapper>
                     </div>
-                  </div>
-                ))}
-            </div>
-
-            {/* Sticky help dropdown */}
-            {orgContext?.currentOrg?.tier !== "demo" && (
-              <div className="p-3">
-                <SidebarHelpDropdown
-                  changelog={changelog}
-                  handleChangelogClick={handleChangelogClick}
-                  isCollapsed={isCollapsed}
-                />
+                  ) : (
+                    <div className="mx-2 mb-4 mt-2 flex flex-col items-start justify-between gap-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 md:flex-row md:items-center md:justify-center md:gap-2">
+                      <div className="flex flex-col gap-2">
+                        <h1 className="text-start text-xs leading-[1.35rem] tracking-tight">
+                          Unlock more features with{" "}
+                          <span className="font-bold text-sky-500">Pro</span>.
+                          No usage limits, sessions, user analytics, custom
+                          properties and much more.
+                        </h1>
+                        <ProFeatureWrapper featureName="pro" enabled={false}>
+                          <Button
+                            variant="action"
+                            className="h-8 w-full bg-sky-500 text-xs text-white hover:bg-sky-600"
+                          >
+                            Start Pro Free Trial
+                          </Button>
+                        </ProFeatureWrapper>
+                      </div>
+                    </div>
+                  ))}
               </div>
-            )}
+            </ScrollArea>
+
+            <div
+              className={cn(
+                "flex flex-col border-t border-slate-200 bg-slate-50 px-2 pb-2 pt-2 dark:border-slate-800 dark:bg-slate-900/50",
+                isCollapsed && "items-center",
+              )}
+            >
+              {/* Resources Section */}
+              <a
+                href="https://docs.helicone.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "flex items-center text-xs text-muted-foreground hover:bg-slate-100 hover:text-foreground dark:hover:bg-slate-800",
+                  isCollapsed
+                    ? "h-8 w-8 justify-center rounded-md"
+                    : "h-8 w-full justify-start gap-2 rounded-md px-3",
+                )}
+              >
+                <FileText size={16} className="text-muted-foreground" />
+                {!isCollapsed && (
+                  <>
+                    <span>Docs</span>
+                    <ArrowUpRight
+                      size={12}
+                      className="ml-auto text-muted-foreground"
+                    />
+                  </>
+                )}
+              </a>
+
+              {/* Partial-width divider */}
+              <div
+                className={cn(
+                  "my-2 h-px bg-slate-200 dark:bg-slate-700",
+                  isCollapsed ? "w-6" : "mx-3",
+                )}
+              />
+
+              {orgContext?.currentOrg?.tier !== "demo" && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="none"
+                    onClick={() => setAgentChatOpen(!agentChatOpen)}
+                    className={cn(
+                      "flex items-center text-xs text-muted-foreground hover:bg-slate-100 hover:text-foreground dark:hover:bg-slate-800",
+                      isCollapsed
+                        ? "h-8 w-8 justify-center"
+                        : "h-8 w-full justify-start gap-2 px-3",
+                    )}
+                  >
+                    <div className="relative">
+                      <MessageCircle size={16} className="text-muted-foreground" />
+                      {agentChatOpen && (
+                        <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+                      )}
+                    </div>
+                    {!isCollapsed && <span>Support</span>}
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="none"
+                    onClick={() => router.push("/credits")}
+                    className={cn(
+                      "flex items-center text-xs hover:bg-slate-100 hover:text-foreground dark:hover:bg-slate-800",
+                      isCollapsed
+                        ? "h-8 w-8 justify-center"
+                        : "h-8 w-full justify-start gap-2 px-3",
+                      router.pathname.includes("/credits")
+                        ? "bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    <Coins
+                      size={16}
+                      className={cn(
+                        router.pathname.includes("/credits")
+                          ? "text-blue-700 dark:text-blue-300"
+                          : "text-muted-foreground",
+                      )}
+                    />
+                    {!isCollapsed && (
+                      <span className="flex flex-1 items-center justify-between">
+                        <span>Credits</span>
+                        <span
+                          className={cn(
+                            "text-xs",
+                            router.pathname.includes("/credits")
+                              ? "text-blue-700 dark:text-blue-300"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          ${(creditData?.balance ?? 0).toFixed(2)}
+                        </span>
+                      </span>
+                    )}
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="none"
+                    onClick={() => router.push("/settings")}
+                    className={cn(
+                      "flex items-center text-xs hover:bg-slate-100 hover:text-foreground dark:hover:bg-slate-800",
+                      isCollapsed
+                        ? "h-8 w-8 justify-center"
+                        : "h-8 w-full justify-start gap-2 px-3",
+                      router.pathname.startsWith("/settings")
+                        ? "bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    <Settings
+                      size={16}
+                      className={cn(
+                        router.pathname.startsWith("/settings")
+                          ? "text-blue-700 dark:text-blue-300"
+                          : "text-muted-foreground",
+                      )}
+                    />
+                    {!isCollapsed && <span>Configure</span>}
+                  </Button>
+
+                  <SidebarHelpDropdown
+                    changelog={changelog}
+                    handleChangelogClick={handleChangelogClick}
+                    isCollapsed={isCollapsed}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

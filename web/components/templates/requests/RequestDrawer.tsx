@@ -8,17 +8,22 @@ import {
 import { P, XSmall } from "@/components/ui/typography";
 import { getJawnClient } from "@/lib/clients/jawn";
 import { useJawnClient } from "@/lib/clients/jawnHook";
+import { logger } from "@/lib/telemetry/logger";
 import { MappedLLMRequest } from "@helicone-package/llm-mapper/types";
+import { useGetPromptInputs } from "@/services/hooks/prompts";
 import { useLocalStorage } from "@/services/hooks/localStorage";
 import { formatDate } from "@/utils/date";
 import { useQuery } from "@tanstack/react-query";
 import {
+  CreditCard,
   Eye,
-  FlaskConicalIcon,
   ListTreeIcon,
   ScrollTextIcon,
+  ShuffleIcon,
+  Share2,
   UserIcon,
 } from "lucide-react";
+
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,6 +49,11 @@ import FeedbackAction from "../feedback/thumbsUpThumbsDown";
 import { RenderMappedRequest } from "./RenderHeliconeRequest";
 import ScrollableBadges from "./ScrollableBadges";
 import StatusBadge from "./statusBadge";
+import { getUSDateFromString } from "@/components/shared/utils/utils";
+import { JsonRenderer } from "./components/chatComponent/single/JsonRenderer";
+import { useGetPromptVersion } from "@/services/hooks/prompts";
+import PromptVersionPill from "@/components/templates/prompts2025/PromptVersionPill";
+import { EMPTY_SESSION_NAME } from "../sessions/sessionId/SessionContent";
 
 const RequestDescTooltip = (props: {
   displayText: string;
@@ -58,7 +68,7 @@ const RequestDescTooltip = (props: {
     <TooltipProvider>
       <Tooltip delayDuration={150}>
         <TooltipTrigger asChild>
-          <div className="text-secondary px-2 py-1 -ml-1 hover:bg-accent flex items-center gap-2 rounded-md cursor-pointer">
+          <div className="-ml-1 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-secondary hover:bg-accent">
             {icon}
             <XSmall>
               <span className="truncate">
@@ -69,11 +79,11 @@ const RequestDescTooltip = (props: {
             </XSmall>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="bottom" align="start" className="p-0 ml-2">
-          <div className="flex flex-col w-full">
+        <TooltipContent side="bottom" align="start" className="ml-2 p-0">
+          <div className="flex w-full flex-col">
             {copyText && (
               <button
-                className="flex items-center justify-between gap-2 p-2 hover:bg-accent text-left"
+                className="flex items-center justify-between gap-2 p-2 text-left hover:bg-accent"
                 onClick={() => {
                   navigator.clipboard.writeText(copyText);
                   setNotification("Copied to clipboard", "success");
@@ -86,7 +96,7 @@ const RequestDescTooltip = (props: {
             {href && (
               <Link
                 href={href}
-                className="flex items-center justify-between gap-2 p-2 hover:bg-accent text-left"
+                className="flex items-center justify-between gap-2 p-2 text-left hover:bg-accent"
               >
                 <span className="text-xs">View</span>
                 <Eye className="h-3 w-3" />
@@ -122,20 +132,59 @@ export default function RequestDrawer(props: RequestDivProps) {
 
   const [showDetails, setShowDetails] = useLocalStorage(
     "request-drawer-details",
-    false
+    false,
   );
   const [showNewDatasetModal, setShowNewDatasetModal] = useState(false);
 
-  // Prompt Data
-  const promptId = useMemo(
+  // NEW PROMPTS SYSTEM (2025)
+  const newPromptId = useMemo(
+    () => request?.heliconeMetadata.promptId ?? null,
+    [request?.heliconeMetadata.promptId],
+  );
+  const newPromptVersionId = useMemo(
+    () => request?.heliconeMetadata.promptVersion ?? null,
+    [request?.heliconeMetadata.promptVersion],
+  );
+
+  const currentPromptData = useGetPromptVersion(
+    newPromptVersionId || undefined,
+    false,
+  );
+
+  const promptInputsQuery = useGetPromptInputs(
+    newPromptId || "",
+    newPromptVersionId || "",
+    request?.id || "",
+  );
+
+  // Sanitizes Target URL if API key is used as a query parameter
+  const sanitizeTargetUrl = useCallback((url: string) => {
+    try {
+      const parsed = new URL(url);
+      const keyParam = parsed.searchParams.get("key");
+      if (keyParam) {
+        const masked = keyParam.startsWith("AI")
+          ? `${keyParam.slice(0, 3)}...`
+          : `${keyParam.slice(0, 1)}...`;
+        parsed.searchParams.set("key", masked);
+        return parsed.toString();
+      }
+    } catch {
+      // Fall through to return the original URL if parsing fails
+    }
+    return url;
+  }, []);
+
+  // BACKWARDS COMPATABILITY FOR OLD PROMPTS
+  const legacyPromptId = useMemo(
     () =>
       request?.heliconeMetadata.customProperties?.["Helicone-Prompt-Id"] ??
       null,
-    [request?.heliconeMetadata.customProperties]
+    [request?.heliconeMetadata.customProperties],
   );
   const promptDataQuery = useQuery({
-    queryKey: ["prompt", promptId, org?.currentOrg?.id],
-    enabled: !!promptId && !!org?.currentOrg?.id,
+    queryKey: ["prompt", legacyPromptId, org?.currentOrg?.id],
+    enabled: !!legacyPromptId && !!org?.currentOrg?.id,
     queryFn: async (query) => {
       const jawn = getJawnClient(query.queryKey[2]);
       const prompt = await jawn.POST("/v1/prompt/query", {
@@ -158,10 +207,12 @@ export default function RequestDrawer(props: RequestDivProps) {
   /* -------------------------------------------------------------------------- */
   const isChatRequest = useMemo(
     () =>
+      request?._type === "ai-gateway-chat" ||
+      request?._type === "ai-gateway-responses" ||
       request?._type === "openai-chat" ||
       request?._type === "anthropic-chat" ||
       request?._type === "gemini-chat",
-    [request]
+    [request],
   );
 
   // TODO: Maybe these go in the Chat component?
@@ -196,10 +247,23 @@ export default function RequestDrawer(props: RequestDivProps) {
       {
         label: "Created At",
         value: formatDate(request.heliconeMetadata.createdAt),
+        fullValue: getUSDateFromString(
+          request.heliconeMetadata.createdAt,
+          true,
+        ),
       },
       { label: "Request ID", value: request.id },
       { label: "User", value: request.heliconeMetadata.user || "Unknown" },
     ];
+
+    if (request.heliconeMetadata.targetUrl) {
+      const safeUrl = sanitizeTargetUrl(request.heliconeMetadata.targetUrl);
+      requestInfo.push({
+        label: "Target URL",
+        value: safeUrl,
+        fullValue: safeUrl,
+      });
+    }
 
     // Token Information
     const tokenInfo = [
@@ -215,6 +279,32 @@ export default function RequestDrawer(props: RequestDivProps) {
         label: "Total Tokens",
         value: request.heliconeMetadata.totalTokens || 0,
       },
+      ...(request.heliconeMetadata.path
+        ? [
+          {
+            label: "Path",
+            value: request.heliconeMetadata.path,
+          },
+        ]
+        : []),
+      ...(request.heliconeMetadata.promptCacheReadTokens &&
+        request.heliconeMetadata.promptCacheReadTokens > 0
+        ? [
+          {
+            label: "Prompt Cache Read Tokens",
+            value: request.heliconeMetadata.promptCacheReadTokens || 0,
+          },
+        ]
+        : []),
+      ...(request.heliconeMetadata.promptCacheWriteTokens &&
+        request.heliconeMetadata.promptCacheWriteTokens > 0
+        ? [
+          {
+            label: "Prompt Cache Write Tokens",
+            value: request.heliconeMetadata.promptCacheWriteTokens || 0,
+          },
+        ]
+        : []),
     ];
 
     // Parameter Information (only include defined parameters)
@@ -265,16 +355,19 @@ export default function RequestDrawer(props: RequestDivProps) {
       });
   }, [jawn, request, router, setNotification]);
 
-  // Test prompt handler
-  const handleTestPrompt = useCallback(() => {
-    if (!request) return;
-
-    if (promptDataQuery.data?.id) {
-      router.push(`/prompts/${promptDataQuery.data?.id}`);
-    } else {
-      router.push(`/prompts/fromRequest/${request.id}`);
-    }
-  }, [promptDataQuery.data?.id, request, router]);
+  // TODO: Delete legacy prompts code
+  const hasNewPromptData = useMemo(
+    () =>
+      newPromptId &&
+      newPromptVersionId &&
+      promptInputsQuery.data &&
+      promptInputsQuery.data !== null,
+    [newPromptId, newPromptVersionId, promptInputsQuery.data],
+  );
+  const hasLegacyPromptData = useMemo(
+    () => legacyPromptId && promptDataQuery.data?.id,
+    [legacyPromptId, promptDataQuery.data?.id],
+  );
 
   // Update keyboard event handler
   useEffect(() => {
@@ -300,6 +393,8 @@ export default function RequestDrawer(props: RequestDivProps) {
     return {
       userId: request?.heliconeMetadata.user ?? undefined,
       promptId:
+        // prioritize new prompt system over legacy
+        newPromptId ??
         request?.heliconeMetadata.customProperties?.["Helicone-Prompt-Id"] ??
         undefined,
       sessionId:
@@ -311,8 +406,11 @@ export default function RequestDrawer(props: RequestDivProps) {
       sessionPath:
         request?.heliconeMetadata.customProperties?.["Helicone-Session-Path"] ??
         undefined,
-    };
-  }, [request?.heliconeMetadata.customProperties]);
+      gatewayRouterId: request?.heliconeMetadata.gatewayRouterId ?? undefined,
+      gatewayDeploymentTarget:
+        request?.heliconeMetadata.gatewayDeploymentTarget ?? undefined,
+    } as Record<string, string | undefined>;
+  }, [request?.heliconeMetadata.customProperties, newPromptId]);
 
   // Get current request Properties and Scores
   const currentProperties = useMemo(() => {
@@ -329,14 +427,63 @@ export default function RequestDrawer(props: RequestDivProps) {
             "Helicone-Session-Path",
             "Helicone-Prompt-Id",
             "Helicone-User-Id",
-          ].includes(key)
-      )
+          ].includes(key),
+      ),
     );
   }, [request?.heliconeMetadata.customProperties]);
   const currentScores = useMemo(
     () => (request?.heliconeMetadata.scores as Record<string, number>) || {},
-    [request?.heliconeMetadata.scores]
+    [request?.heliconeMetadata.scores],
   );
+
+  // Extract Stripe integration properties
+  const stripeProperties = useMemo(() => {
+    const props = request?.heliconeMetadata.customProperties;
+    if (!props) return null;
+
+    return {
+      status: props["helicone-stripe-integration-status"] as string | undefined,
+      skipReason: props["helicone-stripe-skip-reason"] as string | undefined,
+      customerId: props["helicone-stripe-customer-id"] as string | undefined,
+      model: props["helicone-stripe-model"] as string | undefined,
+      attemptedModel: props["helicone-stripe-attempted-model"] as
+        | string
+        | undefined,
+    };
+  }, [request?.heliconeMetadata.customProperties]);
+
+  const hasStripeData = useMemo(() => {
+    return (
+      stripeProperties &&
+      Object.values(stripeProperties).some((v) => v !== undefined)
+    );
+  }, [stripeProperties]);
+
+  // Helper functions for Stripe integration status
+  const getStripeStatusColor = (status: string) => {
+    switch (status) {
+      case "processed":
+        return "bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-300 ring-1 ring-inset ring-green-600/20";
+      case "skipped":
+        return "bg-yellow-50 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 ring-1 ring-inset ring-yellow-600/20";
+      case "error":
+        return "bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-300 ring-1 ring-inset ring-red-600/20";
+      default:
+        return "bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 ring-1 ring-inset ring-gray-600/20";
+    }
+  };
+
+  const formatSkipReason = (reason: string) => {
+    const reasonMap: Record<string, string> = {
+      "cache-hit": "Cache Hit",
+      "no-customer-id": "No Customer ID",
+      "model-not-whitelisted": "Model Not Whitelisted",
+      "max-events-exceeded": "Max Events Exceeded",
+      "zero-tokens": "Zero Tokens",
+    };
+    return reasonMap[reason] || reason;
+  };
+
   // Handlers for adding properties and scores
   const onAddPropertyHandler = useCallback(
     async (key: string, value: string) => {
@@ -350,7 +497,7 @@ export default function RequestDrawer(props: RequestDivProps) {
           request.id,
           org.currentOrg.id,
           key,
-          value
+          value,
         );
 
         if (res?.status === 200) {
@@ -359,11 +506,16 @@ export default function RequestDrawer(props: RequestDivProps) {
           setNotification("Error adding label", "error");
         }
       } catch (err) {
-        console.error(err);
+        logger.error(
+          {
+            error: err,
+          },
+          "Failed to add request property",
+        );
         setNotification(`Error adding label: ${err}`, "error");
       }
     },
-    [org?.currentOrg?.id, request, setNotification]
+    [org?.currentOrg?.id, request, setNotification],
   );
   const onAddScoreHandler = useCallback(
     async (key: string, value: string) => {
@@ -390,7 +542,7 @@ export default function RequestDrawer(props: RequestDivProps) {
           request.id,
           org.currentOrg.id,
           key,
-          numValue
+          numValue,
         );
 
         if (res?.status === 201) {
@@ -399,11 +551,16 @@ export default function RequestDrawer(props: RequestDivProps) {
           setNotification("Error adding score", "error");
         }
       } catch (err) {
-        console.error(err);
+        logger.error(
+          {
+            error: err,
+          },
+          "Failed to add request property",
+        );
         setNotification(`Error adding score: ${err}`, "error");
       }
     },
-    [org?.currentOrg?.id, request, setNotification]
+    [org?.currentOrg?.id, request, setNotification],
   );
 
   // Tracking the width of the container holding the 3 RequestDescTooltips to dynamically truncate length
@@ -434,11 +591,11 @@ export default function RequestDrawer(props: RequestDivProps) {
   const dynamicTruncateLength = useMemo(() => {
     const availableWidth = descContainerWidth - RESERVED_WIDTH;
     const approximateCharsPerItem = Math.floor(
-      availableWidth / (ITEM_COUNT * CHARACTER_WIDTH)
+      availableWidth / (ITEM_COUNT * CHARACTER_WIDTH),
     );
     return Math.max(
       MINIMUM_TRUNCATE_LENGTH,
-      Math.min(approximateCharsPerItem, MAXIMUM_TRUNCATE_LENGTH)
+      Math.min(approximateCharsPerItem, MAXIMUM_TRUNCATE_LENGTH),
     );
   }, [descContainerWidth]);
 
@@ -446,11 +603,11 @@ export default function RequestDrawer(props: RequestDivProps) {
     return null;
   } else
     return (
-      <section className="h-full min-h-full w-full flex flex-col">
+      <section className="flex h-full min-h-full w-full flex-col">
         {/* Header */}
-        <header className="h-fit w-full flex flex-col pt-2 border-b border-border bg-card">
+        <header className="flex h-fit w-full flex-col border-b border-border bg-card pt-2">
           {/* First Top Row */}
-          <div className="h-8 w-full shrink-0 flex flex-row justify-between items-center gap-2 px-2">
+          <div className="flex h-8 w-full shrink-0 flex-row items-center justify-between gap-2 px-2">
             {/* Left Side */}
             <div className="flex flex-row items-center gap-3 overflow-hidden">
               {/* Hide Drawer */}
@@ -461,10 +618,10 @@ export default function RequestDrawer(props: RequestDivProps) {
                       <Button
                         variant={"none"}
                         size={"square_icon"}
-                        className="w-fit text-muted-foreground hover:text-primary pl-2"
+                        className="w-fit pl-2 text-muted-foreground hover:text-primary"
                         onClick={onCollapse}
                       >
-                        <LuPanelRightClose className="w-4 h-4" />
+                        <LuPanelRightClose className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="text-xs">
@@ -474,7 +631,7 @@ export default function RequestDrawer(props: RequestDivProps) {
                 </TooltipProvider>
               )}
               {/* Model Name */}
-              <P className="font-medium text-secondary text-nowrap truncate">
+              <P className="truncate text-nowrap font-medium text-secondary">
                 {request.model}
               </P>
             </div>
@@ -515,6 +672,26 @@ export default function RequestDrawer(props: RequestDivProps) {
                 errorCode={request.heliconeMetadata.status.code}
               />
 
+              {/* AI Gateway Badge */}
+              {request.heliconeMetadata.requestReferrer === "ai-gateway" && (
+                <TooltipProvider>
+                  <Tooltip delayDuration={100}>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        variant={"secondary"}
+                        asPill={false}
+                        className="border border-border"
+                      >
+                        <ShuffleIcon className="h-3 w-3" />
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      AI Gateway Request
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
               {/* Show more Parameters Button */}
               <TooltipProvider>
                 <Tooltip delayDuration={100}>
@@ -527,9 +704,9 @@ export default function RequestDrawer(props: RequestDivProps) {
                       onClick={() => setShowDetails(!showDetails)}
                     >
                       {showDetails ? (
-                        <LuChevronUp className="w-4 h-4" />
+                        <LuChevronUp className="h-4 w-4" />
                       ) : (
-                        <LuChevronDown className="w-4 h-4" />
+                        <LuChevronDown className="h-4 w-4" />
                       )}
                     </Button>
                   </TooltipTrigger>
@@ -545,7 +722,7 @@ export default function RequestDrawer(props: RequestDivProps) {
           {Object.values(specialProperties).some((value) => value) && (
             <div
               ref={containerRef}
-              className="h-8 w-full flex flex-row gap-2 items-center px-2.5 shrink-0"
+              className="flex h-8 w-full shrink-0 flex-row items-center gap-2 px-2.5"
             >
               {/* User */}
               {specialProperties.userId && (
@@ -559,17 +736,18 @@ export default function RequestDrawer(props: RequestDivProps) {
               )}
 
               {/* Session */}
-              {specialProperties.sessionId && specialProperties.sessionName && (
+              {specialProperties.sessionId && (
                 <RequestDescTooltip
                   displayText={
                     specialProperties.sessionPath ??
-                    specialProperties.sessionName
+                    specialProperties.sessionName ??
+                    specialProperties.sessionId
                   }
                   icon={<ListTreeIcon className="h-4 w-4" />}
                   copyText={specialProperties.sessionId}
                   href={`/sessions/${encodeURIComponent(
-                    specialProperties.sessionName
-                  )}/${specialProperties.sessionId}`}
+                    specialProperties.sessionName ?? EMPTY_SESSION_NAME,
+                  )}/${encodeURIComponent(specialProperties.sessionId)}`}
                   truncateLength={dynamicTruncateLength}
                 />
               )}
@@ -577,10 +755,28 @@ export default function RequestDrawer(props: RequestDivProps) {
               {/* Prompt */}
               {specialProperties.promptId && (
                 <RequestDescTooltip
-                  displayText={specialProperties.promptId}
+                  displayText={
+                    currentPromptData?.data?.prompt?.name ||
+                    specialProperties.promptId
+                  }
                   icon={<ScrollTextIcon className="h-4 w-4" />}
                   copyText={specialProperties.promptId}
-                  href={`/prompts/${promptDataQuery.data?.id}`}
+                  href={
+                    newPromptVersionId
+                      ? `/prompts?promptId=${newPromptId}`
+                      : `/prompts/${promptDataQuery.data?.id}`
+                  }
+                  truncateLength={dynamicTruncateLength}
+                />
+              )}
+
+              {/* Gateway Router ID */}
+              {specialProperties.gatewayRouterId && (
+                <RequestDescTooltip
+                  displayText={specialProperties.gatewayRouterId}
+                  icon={<ShuffleIcon className="h-4 w-4" />}
+                  copyText={specialProperties.gatewayRouterId}
+                  href={`/gateway/${specialProperties.gatewayRouterId}`}
                   truncateLength={dynamicTruncateLength}
                 />
               )}
@@ -589,61 +785,73 @@ export default function RequestDrawer(props: RequestDivProps) {
 
           {/* Expandable Details Section */}
           {showDetails && (
-            <div className="h-full w-full flex flex-col gap-4 border-b border-border pb-4 pt-2">
-              <div className="w-full flex flex-row gap-8 justify-between px-4">
+            <div className="flex h-full w-full flex-col gap-4 border-b border-border pb-4 pt-2">
+              <div className="flex w-full flex-row justify-between gap-8 px-4">
                 {/* Request Information */}
-                <div className="w-full flex flex-col gap-2">
+                <div className="flex w-full flex-col gap-2">
                   {requestDetails.requestInfo.map((item) => (
                     <div
                       key={item.label}
-                      className="grid grid-cols-[auto,1fr] gap-x-4 items-center"
+                      className="grid grid-cols-[auto,1fr] items-center gap-x-4"
                     >
-                      <XSmall className="text-muted-foreground text-nowrap">
+                      <XSmall className="text-nowrap text-muted-foreground">
                         {item.label}
                       </XSmall>
 
-                      {item.label === "Request ID" || item.label === "User" ? (
+                      {item.label === "Created At" ? (
+                        <TooltipProvider>
+                          <Tooltip delayDuration={100}>
+                            <TooltipTrigger asChild>
+                              <p className="min-w-0 cursor-pointer truncate text-right text-xs">
+                                {item.value}
+                              </p>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="text-xs">
+                              {item.fullValue}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
                         <TooltipProvider>
                           <Tooltip delayDuration={100}>
                             <TooltipTrigger asChild>
                               <p
-                                className="text-xs truncate min-w-0 text-right cursor-pointer"
+                                className="min-w-0 cursor-pointer truncate text-right text-xs"
                                 onClick={() => {
                                   navigator.clipboard.writeText(item.value);
                                   setNotification(
-                                    "Request ID copied",
-                                    "success"
+                                    `${item.label} copied`,
+                                    "success",
                                   );
                                 }}
                               >
                                 {item.value}
                               </p>
                             </TooltipTrigger>
-                            <TooltipContent side="bottom" className="text-xs">
-                              Copy
+                            <TooltipContent
+                              side="bottom"
+                              className="max-w-md break-all text-xs"
+                            >
+                              Copy: {item.value}
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
-                      ) : (
-                        <p className="text-xs truncate min-w-0 text-right">
-                          {item.value}
-                        </p>
                       )}
                     </div>
                   ))}
                 </div>
 
                 {/* Token Information */}
-                <div className="w-full flex flex-col gap-2">
+                <div className="flex w-full flex-col gap-2">
                   {requestDetails.tokenInfo.map((item) => (
                     <div
                       key={item.label}
-                      className="grid grid-cols-[auto,1fr] gap-x-4 items-center"
+                      className="grid grid-cols-[auto,1fr] items-center gap-x-4"
                     >
-                      <XSmall className="text-muted-foreground text-nowrap">
+                      <XSmall className="text-nowrap text-muted-foreground">
                         {item.label}
                       </XSmall>
-                      <XSmall className="truncate min-w-0 text-right">
+                      <XSmall className="min-w-0 truncate text-right">
                         {item.value}
                       </XSmall>
                     </div>
@@ -657,16 +865,16 @@ export default function RequestDrawer(props: RequestDivProps) {
         <div className="h-full w-full overflow-auto">
           {/* Request Parameters - Moved out of header */}
           {showDetails && requestDetails.parameterInfo.length > 0 && (
-            <div className="w-full flex flex-col gap-2 px-4 py-3 bg-card border-b border-border">
+            <div className="flex w-full flex-col gap-2 border-b border-border bg-card px-4 py-3">
               {requestDetails.parameterInfo.map((item) => (
                 <div
                   key={item.label}
-                  className="grid grid-cols-[auto,1fr] gap-x-4 items-start"
+                  className="grid grid-cols-[auto,1fr] items-start gap-x-4"
                 >
-                  <XSmall className="text-muted-foreground text-nowrap">
+                  <XSmall className="text-nowrap text-muted-foreground">
                     {item.label}
                   </XSmall>
-                  <XSmall className="truncate min-w-0 text-right">
+                  <XSmall className="min-w-0 truncate text-right">
                     {item.value}
                   </XSmall>
                 </div>
@@ -675,7 +883,7 @@ export default function RequestDrawer(props: RequestDivProps) {
           )}
 
           {/* Properties and Scores */}
-          <div className="w-full flex flex-col divide-y divide-border bg-card border-b border-border">
+          <div className="flex w-full flex-col divide-y divide-border border-b border-border bg-card">
             {/* Properties */}
             <ScrollableBadges
               className="px-4"
@@ -711,7 +919,129 @@ export default function RequestDrawer(props: RequestDivProps) {
             />
           </div>
 
-          <div className="p-3 h-full w-full overflow-auto bg-card">
+          <div className="h-full w-full overflow-auto bg-card p-3">
+            {hasNewPromptData && promptInputsQuery.data && (
+              <div className="mb-4 rounded-lg border border-border bg-sidebar-background">
+                <div className="flex h-12 flex-row items-center justify-between rounded-t-lg bg-white p-4 pr-2 shadow-sm dark:bg-black">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-medium">Prompt Input</h2>
+                    {currentPromptData?.data?.prompt?.name && (
+                      <>
+                        <div className="h-4 w-px bg-border" />
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {currentPromptData.data.prompt.name.length > 15
+                            ? currentPromptData.data.prompt.name.substring(
+                              0,
+                              12,
+                            ) + "..."
+                            : currentPromptData.data.prompt.name}
+                        </span>
+                      </>
+                    )}
+                    {currentPromptData?.data?.promptVersion && (
+                      <PromptVersionPill
+                        majorVersion={
+                          currentPromptData.data.promptVersion.major_version
+                        }
+                        minorVersion={
+                          currentPromptData.data.promptVersion.minor_version
+                        }
+                      />
+                    )}
+                  </div>
+                  <Link
+                    href={`/playground?promptVersionId=${newPromptVersionId}`}
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex flex-row items-center gap-1.5"
+                    >
+                      <Eye className="h-4 w-4" />
+                      View
+                    </Button>
+                  </Link>
+                </div>
+                <div className="max-h-60 overflow-auto border-t border-border bg-sidebar-background p-4 text-sm">
+                  <JsonRenderer
+                    data={JSON.parse(
+                      JSON.stringify(promptInputsQuery.data?.inputs),
+                    )}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Stripe Integration Status */}
+            {hasStripeData && stripeProperties && (
+              <div className="mb-4 rounded-lg border border-border bg-sidebar-background p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <CreditCard size={14} className="text-primary" />
+                  <h2 className="text-xs font-medium">Stripe Integration</h2>
+                  {stripeProperties.status && (
+                    <>
+                      <div className="h-3 w-px bg-border" />
+                      <Badge
+                        variant="outline"
+                        className={getStripeStatusColor(
+                          stripeProperties.status,
+                        )}
+                      >
+                        {stripeProperties.status === "processed"
+                          ? "Processed"
+                          : stripeProperties.status === "skipped"
+                            ? "Skipped"
+                            : "Error"}
+                      </Badge>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  {stripeProperties.skipReason && (
+                    <div className="grid grid-cols-[auto,1fr] items-center gap-x-3">
+                      <XSmall className="text-nowrap text-muted-foreground">
+                        Reason
+                      </XSmall>
+                      <XSmall className="min-w-0 text-right">
+                        {formatSkipReason(stripeProperties.skipReason)}
+                      </XSmall>
+                    </div>
+                  )}
+                  {stripeProperties.customerId && (
+                    <div className="grid grid-cols-[auto,1fr] items-center gap-x-3">
+                      <XSmall className="text-nowrap text-muted-foreground">
+                        Customer
+                      </XSmall>
+                      <XSmall className="font-mono min-w-0 truncate text-right">
+                        {stripeProperties.customerId}
+                      </XSmall>
+                    </div>
+                  )}
+                  {stripeProperties.model && (
+                    <div className="grid grid-cols-[auto,1fr] items-center gap-x-3">
+                      <XSmall className="text-nowrap text-muted-foreground">
+                        Model
+                      </XSmall>
+                      <XSmall className="font-mono min-w-0 truncate text-right">
+                        {stripeProperties.model}
+                      </XSmall>
+                    </div>
+                  )}
+                  {stripeProperties.attemptedModel && (
+                    <div className="grid grid-cols-[auto,1fr] items-center gap-x-3">
+                      <XSmall className="text-nowrap text-muted-foreground">
+                        Attempted
+                      </XSmall>
+                      <XSmall className="font-mono min-w-0 truncate text-right">
+                        {stripeProperties.attemptedModel}
+                      </XSmall>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Mapped Request */}
             <RenderMappedRequest
               mappedRequest={request}
@@ -721,32 +1051,23 @@ export default function RequestDrawer(props: RequestDivProps) {
         </div>
 
         {/* Footer */}
-        <footer className="w-full flex flex-col gap-2 py-3 border-t border-border bg-card">
+        <footer className="flex w-full flex-col gap-2 border-t border-border bg-card py-3">
           {/* Actions Row */}
-          <div className="flex flex-row justify-between items-center gap-2 px-3">
+          <div className="flex flex-row items-center justify-between gap-2 px-3">
             <div className="flex flex-row items-center gap-2">
               {isChatRequest && (
-                <Button
-                  variant="action"
-                  size="sm"
-                  className="flex flex-row items-center gap-1.5"
-                  onClick={handleTestPrompt}
-                >
-                  <PiPlayBold className="h-4 w-4" />
-                  Test Prompt
-                </Button>
-              )}
-
-              {isChatRequest && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex flex-row items-center gap-1.5"
-                  onClick={handleCreateExperiment}
-                >
-                  <FlaskConicalIcon className="h-4 w-4" />
-                  Experiment
-                </Button>
+                <Link href={`/playground?requestId=${request.id}`}>
+                  <Button
+                    variant="action"
+                    size="sm"
+                    className="flex flex-row items-center gap-1.5"
+                  >
+                    <PiPlayBold className="h-4 w-4" />
+                    {hasNewPromptData || hasLegacyPromptData
+                      ? "Test Prompt"
+                      : "Playground"}
+                  </Button>
+                </Link>
               )}
 
               <Button
@@ -758,6 +1079,33 @@ export default function RequestDrawer(props: RequestDivProps) {
                 <LuPlus className="h-4 w-4" />
                 Dataset
               </Button>
+
+              {/* Share link */}
+              <TooltipProvider>
+                <Tooltip delayDuration={100}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={"ghost"}
+                      size={"square_icon"}
+                      onClick={() => {
+                        try {
+                          const url = new URL(window.location.href);
+                          url.searchParams.set("requestId", request.id);
+                          navigator.clipboard.writeText(url.toString());
+                          setNotification("Share URL copied", "success");
+                        } catch (e) {
+                          setNotification("Failed to copy link", "error");
+                        }
+                      }}
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    Copy share link
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
 
             <FeedbackAction
@@ -765,10 +1113,12 @@ export default function RequestDrawer(props: RequestDivProps) {
               type="request"
               defaultValue={
                 request.heliconeMetadata.scores &&
-                request.heliconeMetadata.scores["helicone-score-feedback"]
+                  request.heliconeMetadata.scores["helicone-score-feedback"]
                   ? Number(
-                      request.heliconeMetadata.scores["helicone-score-feedback"]
-                    ) === 1
+                    request.heliconeMetadata.scores[
+                    "helicone-score-feedback"
+                    ],
+                  ) === 1
                     ? true
                     : false
                   : null

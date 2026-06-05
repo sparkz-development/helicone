@@ -13,7 +13,7 @@ import { buffer } from "micro";
 import { NextApiRequest, NextApiResponse } from "next";
 import Stripe from "stripe";
 import { hashAuth } from "../../../../lib/hashClient";
-const POSTHOG_EVENT_API = "https://us.i.posthog.com/i/v0/e/";
+import { logger } from "@/lib/telemetry/logger";
 
 async function getUserIdFromEmail(email: string): Promise<string | null> {
   try {
@@ -30,10 +30,10 @@ async function getUserIdFromEmail(email: string): Promise<string | null> {
       return result.data[0].id;
     }
 
-    console.error(`No user found with email: ${email}`);
+    logger.error({ email }, "No user found with email");
     return null;
   } catch (error) {
-    console.error(`Error getting userId from email: ${email}`, error);
+    logger.error({ email, error }, "Error getting userId from email");
     return null;
   }
 }
@@ -62,13 +62,13 @@ async function sendSubscriptionEvent(
     | "subscription_canceled"
     | "subscription_deleted",
   subscription: Stripe.Subscription,
-  additionalProperties: Record<string, any> = {}
+  additionalProperties: Record<string, any> = {},
 ) {
   try {
     const orgId = subscription.metadata?.orgId;
     if (!orgId) {
-      console.log(
-        `No orgId found in subscription metadata, skipping PostHog event`
+      logger.info(
+        `No orgId found in subscription metadata, skipping PostHog event`,
       );
       return;
     }
@@ -86,7 +86,7 @@ async function sendSubscriptionEvent(
       !("email" in customer) ||
       !customer.email
     ) {
-      console.log(`No valid customer email found, skipping PostHog event`);
+      logger.info("No valid customer email found, skipping PostHog event");
       return;
     }
 
@@ -94,7 +94,7 @@ async function sendSubscriptionEvent(
     if (additionalProperties.includeOrgData) {
       const { data } = await dbExecute<{ name: string; owner: string }>(
         `select name, owner from organization where id = $1`,
-        [orgId]
+        [orgId],
       );
       orgData = data?.[0];
       delete additionalProperties.includeOrgData;
@@ -102,8 +102,8 @@ async function sendSubscriptionEvent(
 
     const userId = await getUserIdFromEmail(customer.email);
     if (!userId) {
-      console.error(
-        `Failed to get userId for email ${customer.email}, cannot send PostHog event`
+      logger.error(
+        `Failed to get userId for email ${customer.email}, cannot send PostHog event`,
       );
       return;
     }
@@ -133,19 +133,19 @@ async function sendSubscriptionEvent(
         ...additionalProperties,
       },
       userId,
-      orgId
+      orgId,
     );
 
-    console.log(
-      `PostHog: Sent ${eventType} event for org ${orgId} (userId: ${userId}, tier: ${tier})`
+    logger.info(
+      `PostHog: Sent ${eventType} event for org ${orgId} (userId: ${userId}, tier: ${tier})`,
     );
   } catch (error) {
-    console.error(`Failed to send PostHog event for ${eventType}:`, error);
+    logger.error({ eventType, error }, "Failed to send PostHog event");
   }
 }
 
 async function sendSubscriptionCanceledEvent(
-  subscription: Stripe.Subscription
+  subscription: Stripe.Subscription,
 ) {
   const isCanceling = subscription.cancel_at_period_end === true;
   const isSubscriptionActive = subscription.status === "active";
@@ -187,17 +187,14 @@ async function sendSubscriptionCanceledEvent(
 
         await sendSubscriptionEvent("subscription_canceled", subscription);
       } else {
-        console.log(
-          `No valid customer email found. Customer object:`,
-          JSON.stringify(customer)
-        );
+        logger.info({ customer }, "No valid customer email found");
       }
     } catch (loopsError) {
-      console.error("Failed to send Loops event:", loopsError);
+      logger.error({ error: loopsError }, "Failed to send Loops event");
     }
   } else {
-    console.log(
-      `Subscription ${subscription.id} does not meet criteria for sending cancellation email`
+    logger.info(
+      `Subscription ${subscription.id} does not meet criteria for sending cancellation email`,
     );
   }
 }
@@ -211,14 +208,14 @@ const PricingVersionOld = {
     const orgId = subscription.metadata?.orgId;
 
     const { data: org, error: orgError } = await dbExecute(
-      `UPDATE organization SET subscription_status = 'active', stripe_subscription_id = $1, stripe_subscription_item_id = $2, tier = 'growth', stripe_metadata = $3 WHERE id = $4`,
-      [subscriptionId, subscriptionItemId, {}, orgId]
+      `UPDATE organization SET subscription_status = 'active', stripe_subscription_id = $1, stripe_subscription_item_id = $2, tier = 'growth', stripe_metadata = $3, free_limit_exceeded = NULL WHERE id = $4`,
+      [subscriptionId, subscriptionItemId, {}, orgId],
     );
 
     if (orgError) {
-      console.error("Failed to update organization:", JSON.stringify(orgError));
+      logger.error({ error: orgError }, "Failed to update organization");
     } else {
-      console.log("Organization updated successfully: ", JSON.stringify(org));
+      logger.info({ org }, "Organization updated successfully");
     }
   },
 
@@ -278,17 +275,14 @@ const PricingVersionOld = {
       const { data: org, error: orgError } = await dbExecute(query, params);
 
       if (orgError) {
-        console.error(
-          "Failed to update organization:",
-          JSON.stringify(orgError)
-        );
+        logger.error({ error: orgError }, "Failed to update organization");
       } else {
-        console.log("Organization updated successfully: ", JSON.stringify(org));
+        logger.info({ org }, "Organization updated successfully");
       }
     } else {
-      console.log(
-        "No fields to update for organization with customer ID:",
-        subscriptionUpdated.customer
+      logger.info(
+        { customerId: subscriptionUpdated.customer },
+        "No fields to update for organization with customer ID",
       );
     }
 
@@ -300,7 +294,7 @@ const PricingVersionOld = {
     const subscriptionDeleted = event.data.object as Stripe.Subscription;
     await dbExecute(
       `UPDATE organization SET subscription_status = 'inactive', tier = 'free', stripe_metadata = $1 WHERE stripe_subscription_id = $2`,
-      [{ addons: {} }, subscriptionDeleted.id]
+      [{ addons: {} }, subscriptionDeleted.id],
     );
   },
 
@@ -311,20 +305,23 @@ const PricingVersionOld = {
 
     const { data: org, error: orgError } = await dbExecute(
       `UPDATE organization SET subscription_status = 'active', stripe_subscription_id = $1, tier = $2 WHERE id = $3`,
-      [checkoutCompleted.subscription?.toString(), tier, orgId]
+      [checkoutCompleted.subscription?.toString(), tier, orgId],
     );
 
     if (orgError) {
-      console.error("Failed to update organization:", JSON.stringify(orgError));
+      logger.error({ error: orgError }, "Failed to update organization");
     } else {
-      console.log("Organization updated successfully: ", JSON.stringify(org));
+      logger.info({ org }, "Organization updated successfully");
     }
   },
 };
 
 // TempAPIKey class for managing temporary API keys with automatic cleanup
 class TempAPIKey {
-  constructor(private apiKey: string, private keyId: number) {}
+  constructor(
+    private apiKey: string,
+    private keyId: number,
+  ) {}
 
   // Use the key for an operation and ensure cleanup afterward
   async use<T>(callback: (apiKey: string) => Promise<T>): Promise<T> {
@@ -340,10 +337,10 @@ class TempAPIKey {
     try {
       await dbExecute(
         `UPDATE helicone_api_keys SET soft_delete = true WHERE id = $1`,
-        [this.keyId]
+        [this.keyId],
       );
     } catch (error) {
-      console.error("Failed to cleanup temporary API key:", error);
+      logger.error({ error }, "Failed to cleanup temporary API key");
     }
   }
 }
@@ -352,7 +349,7 @@ class TempAPIKey {
 async function generateTempAPIKey(
   organizationId: string,
   keyName: string,
-  keyPermissions: "rw" | "r" | "w"
+  keyPermissions: "rw" | "r" | "w",
 ): Promise<TempAPIKey> {
   const apiKey = `sk-helicone-${generateApiKey({
     method: "base32",
@@ -366,7 +363,7 @@ async function generateTempAPIKey(
 
   const { data: orgData, error: orgError } = await dbExecute<OrgData>(
     `SELECT owner FROM organization WHERE id = $1 LIMIT 1`,
-    [organizationId]
+    [organizationId],
   );
 
   if (orgError || !orgData || orgData.length === 0) {
@@ -386,7 +383,7 @@ async function generateTempAPIKey(
       organizationId,
       keyPermissions,
       true,
-    ]
+    ],
   );
 
   if (keyError || !keyData || keyData.length === 0) {
@@ -396,11 +393,25 @@ async function generateTempAPIKey(
   return new TempAPIKey(apiKey, keyData[0].id);
 }
 
-// Helper function to get the Jawn service URL, replacing localhost with 127.0.0.1 in serverless environments
+// Helper function to get the Jawn service URL
 function getJawnServiceUrl(): string {
   // Get the URL from environment variable
-  const jawnServiceUrl =
-    process.env.NEXT_PUBLIC_HELICONE_JAWN_SERVICE || "http://localhost:8585";
+  const jawnServiceUrl = process.env.NEXT_PUBLIC_HELICONE_JAWN_SERVICE;
+
+  if (!jawnServiceUrl) {
+    // Fallback to APP_URL or NEXT_PUBLIC_APP_URL with Jawn port if not specified
+    const appUrl =
+      process.env.APP_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "http://localhost:3000";
+    try {
+      const url = new URL(appUrl);
+      // Default Jawn port is 8585
+      return `${url.protocol}//${url.hostname}:8585`;
+    } catch {
+      return "http://localhost:8585";
+    }
+  }
 
   // In serverless environments (Next.js API routes), replace localhost with 127.0.0.1
   // This is needed because localhost doesn't resolve correctly in serverless environments
@@ -424,11 +435,11 @@ async function inviteOnboardingMembers(orgId: string | undefined) {
   const { data: orgDataArr, error: orgDataError } =
     await dbExecute<OnboardingData>(
       `SELECT onboarding_status FROM organization WHERE id = $1 LIMIT 1`,
-      [orgId]
+      [orgId],
     );
 
   if (orgDataError || !orgDataArr || orgDataArr.length === 0) {
-    console.log("Failed to fetch onboarding status:", orgDataError);
+    logger.error({ error: orgDataError }, "Failed to fetch onboarding status");
     return;
   }
 
@@ -451,7 +462,7 @@ async function inviteOnboardingMembers(orgId: string | undefined) {
   const tempKey = await generateTempAPIKey(
     orgId,
     "Stripe Webhook Server Key",
-    "rw"
+    "rw",
   );
 
   // Use the key with automatic cleanup
@@ -472,7 +483,7 @@ async function inviteOnboardingMembers(orgId: string | undefined) {
             body: JSON.stringify({
               email: member.email,
             }),
-          }
+          },
         );
 
         if (!response.ok) {
@@ -481,7 +492,7 @@ async function inviteOnboardingMembers(orgId: string | undefined) {
 
         await response.json();
       } catch (error) {
-        console.error(`Failed to invite member ${member.email}:`, error);
+        logger.error({ email: member.email, error }, "Failed to invite member");
       }
     }
   });
@@ -489,17 +500,17 @@ async function inviteOnboardingMembers(orgId: string | undefined) {
 
 async function createSlackChannelAndInviteMembers(
   orgId: string | undefined,
-  orgName: string | undefined
+  orgName: string | undefined,
 ) {
-  if (!orgId || !orgName || !process.env.SLACK_BOT_TOKEN) {
-    console.log("Missing organization ID, name, or Slack token");
+  if (!orgId || !orgName || !process.env.SLACK_BOT_TOKEN_AUTO_INVITE) {
+    logger.info("Missing organization ID, name, or Slack token");
     return;
   }
 
-  const slackClient = new WebClient(process.env.SLACK_BOT_TOKEN);
+  const slackClient = new WebClient(process.env.SLACK_BOT_TOKEN_AUTO_INVITE);
 
   const channelName = formatChannelName(orgName, orgId);
-  console.log(`Creating Slack channel: ${channelName}`);
+  logger.info({ channelName }, "Creating Slack channel");
 
   const createChannelResponse = await slackClient.conversations.create({
     name: channelName,
@@ -521,19 +532,22 @@ async function createSlackChannelAndInviteMembers(
   const { data: orgMembers, error: orgMembersError } =
     await dbExecute<OrgMember>(
       `SELECT member FROM organization_member WHERE organization = $1`,
-      [orgId]
+      [orgId],
     );
 
   if (orgMembersError) {
-    console.log("Failed to fetch organization members:", orgMembersError);
+    logger.error(
+      { error: orgMembersError },
+      "Failed to fetch organization members",
+    );
   }
 
   const emails = await Promise.all(
-    orgMembers?.map((member) => getUserEmail(member.member)) || []
+    orgMembers?.map((member) => getUserEmail(member.member)) || [],
   ).then((emails) => emails.filter((email) => email !== null) as string[]);
 
   // Invite all workspace members
-  console.log("Inviting all workspace members to the channel");
+  logger.info("Inviting all workspace members to the channel");
   const allMembers = await slackClient.users.list({
     limit: 200, // Fetch up to 200 users at once
   });
@@ -541,11 +555,11 @@ async function createSlackChannelAndInviteMembers(
   if (allMembers.ok && allMembers.members && allMembers.members.length > 0) {
     // Filter out bots, deleted users, and restricted users
     const realUsers = allMembers.members.filter(
-      (member) => !member.is_bot && !member.deleted && !member.is_restricted
+      (member) => !member.is_bot && !member.deleted && !member.is_restricted,
     );
 
     if (realUsers.length > 0) {
-      console.log(`Found ${realUsers.length} real workspace members`);
+      logger.info({ count: realUsers.length }, "Found real workspace members");
 
       // Collect all user IDs and invite them
       const userIds = realUsers
@@ -558,8 +572,8 @@ async function createSlackChannelAndInviteMembers(
           channel: channelId,
           users: userIds,
         });
-        console.log(
-          `Invited ${realUsers.length} workspace members to the channel`
+        logger.info(
+          `Invited ${realUsers.length} workspace members to the channel`,
         );
       }
     }
@@ -567,8 +581,8 @@ async function createSlackChannelAndInviteMembers(
 
   // Get support team user group ID
   const userGroupId = "S08JS8UK211"; // Team support group ID
-  console.log(
-    `Associating channel ${channelId} with support group ${userGroupId}`
+  logger.info(
+    `Associating channel ${channelId} with support group ${userGroupId}`,
   );
 
   // Associate the channel with the Team user group
@@ -577,7 +591,7 @@ async function createSlackChannelAndInviteMembers(
   });
 
   const targetGroup = userGroupsListResponse.usergroups?.find(
-    (group) => group.id === userGroupId
+    (group) => group.id === userGroupId,
   );
 
   if (targetGroup) {
@@ -594,7 +608,7 @@ async function createSlackChannelAndInviteMembers(
       usergroup: userGroupId,
       channels: existingChannels.join(","), // Slack expects a comma-separated string
     });
-    console.log(`Successfully associated channel with support group`);
+    logger.info("Successfully associated channel with support group");
   }
 
   // Post welcome message to the channel with email list
@@ -614,14 +628,14 @@ async function createSlackChannelAndInviteMembers(
       `(These users will need to be manually invited to the Slack workspace)`,
   });
 
-  console.log(
-    `Successfully created Slack channel and added team members for ${orgName}`
+  logger.info(
+    `Successfully created Slack channel and added team members for ${orgName}`,
   );
 }
 
 function formatChannelName(
   organizationName: string,
-  organizationId?: string
+  organizationId?: string,
 ): string {
   // Start with the team prefix
   let name = "team-";
@@ -649,7 +663,7 @@ function formatChannelName(
 }
 
 async function getUserEmail(
-  userId: string | undefined
+  userId: string | undefined,
 ): Promise<string | null> {
   if (!userId) return null;
 
@@ -657,7 +671,7 @@ async function getUserEmail(
     const user = await getHeliconeAuthClient().getUserById(userId);
     return user.data?.email || null;
   } catch (error) {
-    console.error("Error fetching owner email:", error);
+    logger.error({ error }, "Error fetching owner email");
     return null;
   }
 }
@@ -680,47 +694,52 @@ const TeamVersion20250130 = {
     const { data: orgDataArray, error: orgDataError } =
       await dbExecute<OrgSubscriptionData>(
         `SELECT stripe_subscription_id, name, owner FROM organization WHERE id = $1 LIMIT 1`,
-        [orgId || ""]
+        [orgId],
       );
 
     if (orgDataError) {
-      console.error("Failed to fetch organization data:", orgDataError);
+      logger.error(
+        { error: orgDataError },
+        "Failed to fetch organization data",
+      );
     }
 
     const orgData =
       orgDataArray && orgDataArray.length > 0 ? orgDataArray[0] : null;
 
-    // Cancel old subscription if it exists
+    // Cancel old subscription if it exists AND it's different from the new one
     if (
       orgData &&
       orgData.stripe_subscription_id &&
-      typeof orgData.stripe_subscription_id === "string"
+      typeof orgData.stripe_subscription_id === "string" &&
+      orgData.stripe_subscription_id !== subscriptionId // Don't cancel the subscription we just created!
     ) {
       try {
-        console.log("Cancelling old subscription");
+        logger.info("Cancelling old subscription");
         await stripe.subscriptions.cancel(orgData.stripe_subscription_id, {
           invoice_now: true,
           prorate: true,
         });
-      } catch (e) {
-        console.error("Error canceling old subscription:", e);
+      } catch (_e) {
+        logger.error({ error: _e }, "Error canceling old subscription");
       }
     }
 
     // Update to new subscription
-    const { data: updateData, error: updateError } = await dbExecute(
-      `UPDATE organization 
-       SET subscription_status = 'active', 
-           stripe_subscription_id = $1, 
-           stripe_subscription_item_id = $2, 
-           tier = 'team-20250130', 
-           stripe_metadata = $3
+    const { error: updateError } = await dbExecute(
+      `UPDATE organization
+       SET subscription_status = 'active',
+           stripe_subscription_id = $1,
+           stripe_subscription_item_id = $2,
+           tier = 'team-20250130',
+           stripe_metadata = $3,
+           free_limit_exceeded = NULL
        WHERE id = $4`,
-      [subscriptionId, subscriptionItemId, { addons: {} }, orgId || ""]
+      [subscriptionId, subscriptionItemId, { addons: {} }, orgId || ""],
     );
 
     if (updateError) {
-      console.error("Failed to update organization:", updateError);
+      logger.error({ error: updateError }, "Failed to update organization");
     }
 
     // Invite members after org is updated
@@ -737,11 +756,11 @@ const TeamVersion20250130 = {
     });
   },
 
-  handleUpdate: async (event: Stripe.Event) => {
-    const subscription = event.data.object as Stripe.Subscription;
+  handleUpdate: async (_event: Stripe.Event) => {
+    const subscription = _event.data.object as Stripe.Subscription;
     await sendSubscriptionCanceledEvent(subscription);
   },
-  handleCheckoutSessionCompleted: async (event: Stripe.Event) => {
+  handleCheckoutSessionCompleted: async (_event: Stripe.Event) => {
     // We don't need to do anything here because the subscription is already active
     // All update states are handled in the jawn StripeManager
     return;
@@ -765,19 +784,20 @@ const PricingVersion20240913 = {
       }
     });
 
-    const { data: updateData, error: updateError } = await dbExecute(
-      `UPDATE organization 
-       SET subscription_status = 'active', 
-           stripe_subscription_id = $1, 
-           stripe_subscription_item_id = $2, 
-           tier = 'pro-20250202', 
-           stripe_metadata = $3
+    const { error: updateError } = await dbExecute(
+      `UPDATE organization
+       SET subscription_status = 'active',
+           stripe_subscription_id = $1,
+           stripe_subscription_item_id = $2,
+           tier = 'pro-20250202',
+           stripe_metadata = $3,
+           free_limit_exceeded = NULL
        WHERE id = $4`,
-      [subscriptionId, subscriptionItemId, { addons: addons }, orgId || ""]
+      [subscriptionId, subscriptionItemId, { addons: addons }, orgId || ""],
     );
 
     if (updateError) {
-      console.error("Failed to update organization:", updateError);
+      logger.error({ error: updateError }, "Failed to update organization");
     }
 
     // Invite members after org is updated
@@ -790,13 +810,174 @@ const PricingVersion20240913 = {
     });
   },
 
-  handleUpdate: async (event: Stripe.Event) => {
-    const subscription = event.data.object as Stripe.Subscription;
+  handleUpdate: async (_event: Stripe.Event) => {
+    const subscription = _event.data.object as Stripe.Subscription;
     await sendSubscriptionCanceledEvent(subscription);
   },
-  handleCheckoutSessionCompleted: async (event: Stripe.Event) => {
+  handleCheckoutSessionCompleted: async (_event: Stripe.Event) => {
     // We don't need to do anything here because the subscription is already active
     // All update states are handled in the jawn StripeManager
+    return;
+  },
+  handleDelete: PricingVersionOld.handleDelete,
+};
+
+// New pricing version (2025-12-10): $79/mo flat + $6/GB byte-based billing
+// Prompts now included, no per-seat, no per-request
+const ProVersion20251210 = {
+  async handleCreate(event: Stripe.Event) {
+    const subscription = event.data.object as Stripe.Subscription;
+    const subscriptionId = subscription.id;
+    const subscriptionItemId = subscription?.items.data[0].id;
+    const orgId = subscription.metadata?.orgId;
+
+    if (!orgId || typeof orgId !== "string" || orgId.trim() === "") {
+      logger.error({ subscriptionId }, "Missing or invalid orgId in subscription metadata");
+      return;
+    }
+
+    // New pricing: all features included in base plan
+    const addons: Addons = {
+      alerts: true,
+      prompts: true,
+      experiments: true,
+      evals: true,
+    };
+
+    const { error: updateError } = await dbExecute(
+      `UPDATE organization
+       SET subscription_status = 'active',
+           stripe_subscription_id = $1,
+           stripe_subscription_item_id = $2,
+           tier = 'pro-20251210',
+           stripe_metadata = $3,
+           free_limit_exceeded = NULL
+       WHERE id = $4`,
+      [subscriptionId, subscriptionItemId, { addons: addons }, orgId],
+    );
+
+    if (updateError) {
+      logger.error({ error: updateError }, "Failed to update organization");
+    }
+
+    // Invite members after org is updated
+    await inviteOnboardingMembers(orgId);
+
+    // Send PostHog event
+    await sendSubscriptionEvent("subscription_created", subscription, {
+      includeOrgData: true,
+      addons: JSON.stringify(addons),
+    });
+  },
+
+  handleUpdate: async (_event: Stripe.Event) => {
+    const subscription = _event.data.object as Stripe.Subscription;
+    await sendSubscriptionCanceledEvent(subscription);
+  },
+  handleCheckoutSessionCompleted: async (_event: Stripe.Event) => {
+    return;
+  },
+  handleDelete: PricingVersionOld.handleDelete,
+};
+
+// New Team pricing version (2025-12-10): $799/mo flat + $6/GB byte-based billing
+const TeamVersion20251210 = {
+  async handleCreate(event: Stripe.Event) {
+    const subscription = event.data.object as Stripe.Subscription;
+    const subscriptionId = subscription.id;
+    const subscriptionItemId = subscription?.items.data[0].id;
+    const orgId = subscription.metadata?.orgId;
+
+    if (!orgId || typeof orgId !== "string" || orgId.trim() === "") {
+      logger.error({ subscriptionId }, "Missing or invalid orgId in subscription metadata");
+      return;
+    }
+
+    // Get the existing subscription from the organization
+    type OrgSubscriptionData = {
+      stripe_subscription_id: string | null;
+      name: string | null;
+      owner: string | null;
+    };
+
+    const { data: orgDataArray, error: orgDataError } =
+      await dbExecute<OrgSubscriptionData>(
+        `SELECT stripe_subscription_id, name, owner FROM organization WHERE id = $1 LIMIT 1`,
+        [orgId],
+      );
+
+    if (orgDataError) {
+      logger.error(
+        { error: orgDataError },
+        "Failed to fetch organization data",
+      );
+    }
+
+    const orgData =
+      orgDataArray && orgDataArray.length > 0 ? orgDataArray[0] : null;
+
+    // Cancel old subscription if it exists AND it's different from the new one
+    if (
+      orgData &&
+      orgData.stripe_subscription_id &&
+      typeof orgData.stripe_subscription_id === "string" &&
+      orgData.stripe_subscription_id !== subscriptionId // Don't cancel the subscription we just created!
+    ) {
+      try {
+        logger.info("Cancelling old subscription");
+        await stripe.subscriptions.cancel(orgData.stripe_subscription_id, {
+          invoice_now: true,
+          prorate: true,
+        });
+      } catch (_e) {
+        logger.error({ error: _e }, "Error canceling old subscription");
+      }
+    }
+
+    // New pricing: all features included in base plan
+    const addons: Addons = {
+      alerts: true,
+      prompts: true,
+      experiments: true,
+      evals: true,
+    };
+
+    // Update to new subscription
+    const { error: updateError } = await dbExecute(
+      `UPDATE organization
+       SET subscription_status = 'active',
+           stripe_subscription_id = $1,
+           stripe_subscription_item_id = $2,
+           tier = 'team-20251210',
+           stripe_metadata = $3,
+           free_limit_exceeded = NULL
+       WHERE id = $4`,
+      [subscriptionId, subscriptionItemId, { addons }, orgId],
+    );
+
+    if (updateError) {
+      logger.error({ error: updateError }, "Failed to update organization");
+    }
+
+    // Invite members after org is updated
+    await inviteOnboardingMembers(orgId);
+
+    // Create Slack channel and invite team members
+    if (orgData?.name) {
+      await createSlackChannelAndInviteMembers(orgId, orgData.name);
+    }
+
+    // Send PostHog event
+    await sendSubscriptionEvent("subscription_created", subscription, {
+      includeOrgData: true,
+    });
+  },
+
+  handleUpdate: async (_event: Stripe.Event) => {
+    const subscription = _event.data.object as Stripe.Subscription;
+    await sendSubscriptionCanceledEvent(subscription);
+  },
+  handleCheckoutSessionCompleted: async (_event: Stripe.Event) => {
     return;
   },
   handleDelete: PricingVersionOld.handleDelete,
@@ -811,7 +992,7 @@ const InvoiceHandlers = {
         const subscriptionMetadata = invoice.subscription_details?.metadata;
         const orgId = subscriptionMetadata?.orgId;
         if (!orgId) {
-          console.log("No orgId found, skipping invoice item creation");
+          logger.info("No orgId found, skipping invoice item creation");
           return;
         }
 
@@ -821,31 +1002,31 @@ const InvoiceHandlers = {
             : invoice.customer?.id;
 
         if (!customerID) {
-          console.log("No customerID found, skipping invoice item creation");
+          logger.info("No customerID found, skipping invoice item creation");
           return;
         }
 
         const subscription = await stripe.subscriptions.retrieve(
-          invoice.subscription as string
+          invoice.subscription as string,
         );
 
         const subscriptionStartDate = new Date(
-          subscription.current_period_start * 1000
+          subscription.current_period_start * 1000,
         );
         const subscriptionEndDate = new Date(
-          subscription.current_period_end * 1000
+          subscription.current_period_end * 1000,
         );
 
         const experimentUsage = await getExperimentUsage(
           orgId,
           subscriptionStartDate,
-          subscriptionEndDate
+          subscriptionEndDate,
         );
 
         if (experimentUsage.error || !experimentUsage.data) {
-          console.error(
-            "Error getting experiment usage:",
-            experimentUsage.error
+          logger.error(
+            { error: experimentUsage.error },
+            "Error getting experiment usage",
           );
           return;
         }
@@ -853,11 +1034,14 @@ const InvoiceHandlers = {
         const evaluatorUsage = await getEvaluatorUsage(
           orgId,
           subscriptionStartDate,
-          subscriptionEndDate
+          subscriptionEndDate,
         );
 
         if (evaluatorUsage.error || !evaluatorUsage.data) {
-          console.error("Error getting evaluator usage:", evaluatorUsage.error);
+          logger.error(
+            { error: evaluatorUsage.error },
+            "Error getting evaluator usage",
+          );
           return;
         }
 
@@ -869,7 +1053,10 @@ const InvoiceHandlers = {
             });
 
             if (!totalCost) {
-              console.error("No cost found for", usage.model, usage.provider);
+              logger.error(
+                { model: usage.model, provider: usage.provider },
+                "No cost found for model/provider",
+              );
               continue;
             }
 
@@ -880,7 +1067,7 @@ const InvoiceHandlers = {
               amount: Math.ceil(
                 (totalCost.completion_token * usage.completion_tokens +
                   totalCost.prompt_token * usage.prompt_tokens) *
-                  100
+                  100,
               ),
               description: `Experiment: ${usage.provider}/${
                 usage.model
@@ -901,7 +1088,10 @@ const InvoiceHandlers = {
             });
 
             if (!totalCost) {
-              console.error("No cost found for", usage.model, usage.provider);
+              logger.error(
+                { model: usage.model, provider: usage.provider },
+                "No cost found for model/provider",
+              );
               continue;
             }
 
@@ -912,7 +1102,7 @@ const InvoiceHandlers = {
               amount: Math.ceil(
                 (totalCost.completion_token * usage.completion_tokens +
                   totalCost.prompt_token * usage.prompt_tokens) *
-                  100
+                  100,
               ),
               description: `Evaluator: ${usage.provider}/${
                 usage.model
@@ -925,10 +1115,10 @@ const InvoiceHandlers = {
           }
         }
       } else {
-        console.log("Invoice is not draft, skipping finalization");
+        logger.info("Invoice is not draft, skipping finalization");
       }
     } catch (error) {
-      console.error("Error handling invoice creation:", error);
+      logger.error({ error }, "Error handling invoice creation");
       throw error;
     }
   },
@@ -945,7 +1135,7 @@ const InvoiceHandlers = {
         // });
       }
     } catch (error) {
-      console.error("Error handling upcoming invoice:", error);
+      logger.error({ error }, "Error handling upcoming invoice");
       throw error;
     }
   },
@@ -962,23 +1152,30 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
       event = stripe.webhooks.constructEvent(
         buf.toString(),
         sig,
-        process.env.STRIPE_WEBHOOK_SECRET!
+        process.env.STRIPE_WEBHOOK_SECRET!,
       ) as Stripe.Event;
-    } catch (err) {
-      res.status(400).send(`Webhook Error: ${err}`);
+    } catch (_err) {
+      res.status(400).send(`Webhook Error: ${_err}`);
       return;
     }
     const stripeObject = event.data.object as
       | Stripe.Subscription
       | Stripe.Checkout.Session;
 
-    const pricingFunctions =
-      stripeObject.metadata?.["tier"] === "pro-20240913" ||
-      stripeObject.metadata?.["tier"] === "pro-20250202"
-        ? PricingVersion20240913
-        : stripeObject.metadata?.["tier"] === "team-20250130"
-        ? TeamVersion20250130
-        : PricingVersionOld;
+    const tier = stripeObject.metadata?.["tier"];
+    let pricingFunctions;
+
+    if (tier === "pro-20251210") {
+      pricingFunctions = ProVersion20251210;
+    } else if (tier === "team-20251210") {
+      pricingFunctions = TeamVersion20251210;
+    } else if (tier === "pro-20240913" || tier === "pro-20250202") {
+      pricingFunctions = PricingVersion20240913;
+    } else if (tier === "team-20250130") {
+      pricingFunctions = TeamVersion20250130;
+    } else {
+      pricingFunctions = PricingVersionOld;
+    }
 
     if (event.type === "test_helpers.test_clock.advancing") {
       return res.status(200).end();
@@ -998,7 +1195,7 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
     ];
 
     if (knownUnhandledEvents.includes(event.type)) {
-      console.log("Unhandled event type", event.type);
+      logger.info({ eventType: event.type }, "Unhandled event type");
       return res.status(200).end();
     }
 
@@ -1015,7 +1212,7 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
     } else if (event.type === "invoice.upcoming") {
       await InvoiceHandlers.handleInvoiceUpcoming(event);
     } else {
-      console.log("Unhandled event type", event.type);
+      logger.info({ eventType: event.type }, "Unhandled event type");
       return res.status(400).end();
     }
 

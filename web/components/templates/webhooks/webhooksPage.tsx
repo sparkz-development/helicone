@@ -3,16 +3,15 @@ import {
   EyeIcon,
   EyeSlashIcon,
   PlusIcon,
+  BeakerIcon,
 } from "@heroicons/react/24/outline";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useOrg } from "../../layout/org/organizationContext";
 import useNotification from "../../shared/notification/useNotification";
+import { logger } from "@/lib/telemetry/logger";
 import { getUSDateFromString } from "../../shared/utils/utils";
 import AddWebhookForm from "./addWebhookForm";
-import { useFeatureLimit } from "@/hooks/useFreeTierLimit";
-import { FreeTierLimitWrapper } from "@/components/shared/FreeTierLimitWrapper";
-import { FreeTierLimitBanner } from "@/components/shared/FreeTierLimitBanner";
 import { EmptyStateCard } from "@/components/shared/helicone/EmptyStateCard";
 
 // Import ShadcnUI components
@@ -42,12 +41,12 @@ interface WebhooksPageProps {}
 const WebhooksPage = (props: WebhooksPageProps) => {
   const { setNotification } = useNotification();
   const org = useOrg();
-  const [viewWebhookOpen, setViewWebhookOpen] = useState(false);
   const [addWebhookOpen, setAddWebhookOpen] = useState(false);
   const [webhookError, setWebhookError] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const [showChangelogBanner, setShowChangelogBanner] = useState(true);
+  const [testingWebhook, setTestingWebhook] = useState<string | null>(null);
 
   const [visibleHmacKeys, setVisibleHmacKeys] = useState<
     Record<string, boolean>
@@ -76,11 +75,6 @@ const WebhooksPage = (props: WebhooksPageProps) => {
     }
   }, []);
 
-  const dismissChangelogBanner = () => {
-    setShowChangelogBanner(false);
-    localStorage.setItem("webhooks_changelog_banner_dismissed", "true");
-  };
-
   const {
     data: webhooks,
     refetch: refetchWebhooks,
@@ -95,8 +89,6 @@ const WebhooksPage = (props: WebhooksPageProps) => {
   });
 
   const webhookCount = webhooks?.data?.data?.length || 0;
-
-  const { freeLimit, canCreate } = useFeatureLimit("webhooks", webhookCount);
 
   const createWebhook = useMutation({
     mutationFn: async (data: {
@@ -126,7 +118,7 @@ const WebhooksPage = (props: WebhooksPageProps) => {
 
         return response;
       } catch (error: any) {
-        console.error("Webhook creation error:", error);
+        logger.error({ error }, "Webhook creation error");
         throw new Error(error.message || "Failed to create webhook");
       }
     },
@@ -159,6 +151,33 @@ const WebhooksPage = (props: WebhooksPageProps) => {
     },
   });
 
+  const testWebhook = useMutation({
+    mutationFn: async (id: string) => {
+      const jawn = getJawnClient(org?.currentOrg?.id);
+      return jawn.POST(`/v1/webhooks/{webhookId}/test`, {
+        params: {
+          path: {
+            webhookId: id,
+          },
+        },
+      });
+    },
+    onSuccess: (data) => {
+      const response = data as any;
+      if (response?.data?.success) {
+        setNotification("Test webhook sent successfully!", "success");
+      } else {
+        setNotification(response?.data?.message || "Test webhook sent", "info");
+      }
+    },
+    onError: (error: Error) => {
+      setNotification(`Test failed: ${error.message}`, "error");
+    },
+    onSettled: () => {
+      setTestingWebhook(null);
+    },
+  });
+
   const handleAddWebhook = () => {
     setAddWebhookOpen(true);
   };
@@ -178,8 +197,8 @@ const WebhooksPage = (props: WebhooksPageProps) => {
 
   if (!isLoading && webhookCount === 0) {
     return (
-      <div className="flex flex-col w-full h-screen bg-background dark:bg-sidebar-background">
-        <div className="flex flex-1 h-full">
+      <div className="flex h-screen w-full flex-col bg-background dark:bg-sidebar-background">
+        <div className="flex h-full flex-1">
           <EmptyStateCard
             feature="webhooks"
             onPrimaryClick={handleAddWebhook}
@@ -207,7 +226,7 @@ const WebhooksPage = (props: WebhooksPageProps) => {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
+      <div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
         <div className="space-y-2">
           <Skeleton className="h-4 w-[250px]" />
           <Skeleton className="h-4 w-[200px]" />
@@ -222,22 +241,14 @@ const WebhooksPage = (props: WebhooksPageProps) => {
       <div className="flex flex-col space-y-4">
         <AuthHeader
           isWithinIsland={true}
-          title={<div className="flex items-center gap-2 ml-8">Webhooks</div>}
+          title={<div className="ml-8 flex items-center gap-2">Webhooks</div>}
         />
 
-        {!canCreate && (
-          <FreeTierLimitBanner
-            feature="webhooks"
-            itemCount={webhookCount}
-            freeLimit={freeLimit}
-          />
-        )}
-
-        <div className="flex justify-between items-center mx-8 mb-2">
+        <div className="mx-8 mb-2 flex items-center justify-between">
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="text-muted-foreground transition-colors hover:text-foreground"
             asChild
           >
             <a
@@ -252,32 +263,15 @@ const WebhooksPage = (props: WebhooksPageProps) => {
           </Button>
           <Dialog open={addWebhookOpen} onOpenChange={setAddWebhookOpen}>
             <DialogTrigger asChild>
-              {webhookCount < freeLimit ? (
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex items-center gap-1"
-                  onClick={handleAddWebhook}
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  Add Webhook
-                </Button>
-              ) : (
-                <FreeTierLimitWrapper
-                  key={`webhook-limit-${webhookCount}`}
-                  feature="webhooks"
-                  itemCount={webhookCount}
-                >
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="flex items-center gap-1"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    Add Webhook
-                  </Button>
-                </FreeTierLimitWrapper>
-              )}
+              <Button
+                variant="default"
+                size="sm"
+                className="flex items-center gap-1"
+                onClick={handleAddWebhook}
+              >
+                <PlusIcon className="h-4 w-4" />
+                Add Webhook
+              </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <AddWebhookForm
@@ -297,26 +291,34 @@ const WebhooksPage = (props: WebhooksPageProps) => {
         </div>
 
         <div className="mx-8">
-          <Table className="w-full bg-white border rounded-md shadow-sm">
-            <TableHeader className="bg-gray-50">
+          <Table className="w-full rounded-md border border-border bg-background shadow-sm">
+            <TableHeader className="bg-card">
               <TableRow>
-                <TableHead className="font-medium">Destination</TableHead>
-                <TableHead className="font-medium">Created</TableHead>
-                <TableHead className="font-medium">Version</TableHead>
-                <TableHead className="font-medium">Sample Rate</TableHead>
-                <TableHead className="font-medium">Property Filters</TableHead>
-                <TableHead className="font-medium">Include Data</TableHead>
-                <TableHead className="font-medium">HMAC Key</TableHead>
-                <TableHead className="font-medium">Actions</TableHead>
+                <TableHead className="text-xs font-medium">
+                  Destination
+                </TableHead>
+                <TableHead className="text-xs font-medium">Created</TableHead>
+                <TableHead className="text-xs font-medium">Version</TableHead>
+                <TableHead className="text-xs font-medium">
+                  Sample Rate
+                </TableHead>
+                <TableHead className="text-xs font-medium">
+                  Property Filters
+                </TableHead>
+                <TableHead className="text-xs font-medium">
+                  Include Data
+                </TableHead>
+                <TableHead className="text-xs font-medium">HMAC Key</TableHead>
+                <TableHead className="text-xs font-medium">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {webhooks?.data?.data?.map((webhook) => (
-                <TableRow key={webhook.id} className="hover:bg-gray-50">
+                <TableRow key={webhook.id} className="hover:bg-muted">
                   <TableCell className="max-w-[200px] truncate">
                     <TooltipProvider>
                       <Tooltip>
-                        <TooltipTrigger className="text-left truncate">
+                        <TooltipTrigger className="truncate text-left">
                           {webhook.destination}
                         </TooltipTrigger>
                         <TooltipContent>
@@ -366,11 +368,11 @@ const WebhooksPage = (props: WebhooksPageProps) => {
                   </TableCell>
                   <TableCell>
                     {(webhook.config as any)?.["includeData"] !== false ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
                         Enabled
                       </span>
                     ) : (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
                         Disabled
                       </span>
                     )}
@@ -379,7 +381,7 @@ const WebhooksPage = (props: WebhooksPageProps) => {
                     <div className="flex items-center space-x-2">
                       {visibleHmacKeys[webhook.id] ? (
                         <>
-                          <span className="text-xs font-mono">
+                          <span className="font-mono text-xs">
                             {webhook.hmac_key}
                           </span>
                           <button
@@ -404,16 +406,39 @@ const WebhooksPage = (props: WebhooksPageProps) => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="ml-2 text-white"
-                      onClick={() => {
-                        deleteWebhook.mutate(webhook.id);
-                      }}
-                    >
-                      Delete
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setTestingWebhook(webhook.id);
+                          testWebhook.mutate(webhook.id);
+                        }}
+                        disabled={testingWebhook === webhook.id}
+                      >
+                        {testingWebhook === webhook.id ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            <span className="ml-1">Testing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <BeakerIcon className="mr-1 h-4 w-4" />
+                            Test
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="text-white"
+                        onClick={() => {
+                          deleteWebhook.mutate(webhook.id);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

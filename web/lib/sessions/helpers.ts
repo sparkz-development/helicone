@@ -8,7 +8,7 @@ import {
 } from "./sessionTypes";
 
 export const createTraceNodes = (
-  session: Session
+  session: Session,
 ): Record<string, TraceNode> => {
   const nodes: Record<string, TraceNode> = {};
 
@@ -52,7 +52,10 @@ export const tracesToFolderNodes = (traces: Trace[]): FolderNode[] => {
     if (!trace.path) {
       return;
     }
-    const parts = trace.path.split("/");
+    const normalizedPath = trace.path.startsWith("/")
+      ? trace.path
+      : `/${trace.path}`;
+    const parts = normalizedPath.split("/");
     if (!parts) {
       return;
     }
@@ -85,26 +88,44 @@ export const tracesToFolderNodes = (traces: Trace[]): FolderNode[] => {
   });
 
   const rootPaths = Object.keys(folderMap).filter(
-    (path) => !path.includes("/")
+    (path) => !path.includes("/"),
   );
 
   return rootPaths.map((rootPath) => folderMap[rootPath]);
 };
 
 export const totalLatency = (folder: FolderNode): number => {
-  if (folder.children.length === 0) {
-    return 0;
-  }
-
-  return folder.children.reduce((acc, child) => {
-    if ("folderName" in child) {
-      return acc + totalLatency(child);
-    } else {
-      return (
-        acc + (child.end_unix_timestamp_ms - child.start_unix_timestamp_ms)
-      );
+  const earliestFolder = (folder: FolderNode): number => {
+    if (folder.children.length === 0) {
+      return 0;
     }
-  }, 0);
+
+    return Math.min(
+      ...folder.children.map((child) => {
+        if ("folderName" in child) {
+          return earliestFolder(child);
+        } else {
+          return child.start_unix_timestamp_ms;
+        }
+      }),
+    );
+  };
+  const latestFolder = (folder: FolderNode): number => {
+    if (folder.children.length === 0) {
+      return 0;
+    }
+
+    return Math.max(
+      ...folder.children.map((child) => {
+        if ("folderName" in child) {
+          return latestFolder(child);
+        } else {
+          return child.end_unix_timestamp_ms;
+        }
+      }),
+    );
+  };
+  return Math.round(latestFolder(folder) - earliestFolder(folder));
 };
 
 export const tracesToTreeNodeData = (traces: Trace[]): TreeNodeData => {
@@ -144,9 +165,21 @@ export const tracesToTreeNodeData = (traces: Trace[]): TreeNodeData => {
 };
 
 function getHeliconeRequestType(trace: Trace): HeliconeRequestType {
+  // base type on conversation trace
+  const responseMessage = trace.request.schema.response;
+  const containsToolCall = responseMessage?.messages?.some(
+    (message) => message.tool_calls?.length ?? 0 > 0,
+  );
+  if (containsToolCall) {
+    return "Tool";
+  }
+
+  // for custom logged events
   return trace.request.model.startsWith("tool:")
     ? "Tool"
     : trace.request.model.startsWith("vector_db")
-    ? "VectorDB"
-    : "LLM";
+      ? "VectorDB"
+      : trace.request.model.startsWith("data:")
+        ? "Data"
+        : "LLM";
 }

@@ -4,6 +4,9 @@ sidebarTitle: "Gateway Fallbacks"
 description: "Access multiple LLM providers through Helicone's unified gateway. Ensure high availability with automatic fallback options across OpenAI, Anthropic, and other AI services."
 "twitter:title": "Gateway Fallbacks for LLM Providers - Helicone OSS LLM Observability"
 ---
+import LegacyWarning from "/snippets/legacy-provider-warning.mdx";
+
+<LegacyWarning />
 
 import QuestionsSection from "/snippets/questions-section.mdx";
 
@@ -91,7 +94,7 @@ headers = {
   ]),
 }
 payload = {
-  "model": "gpt-4",
+  "model": "gpt-4o-mini",
   "messages": [
     {
       "role": "user",

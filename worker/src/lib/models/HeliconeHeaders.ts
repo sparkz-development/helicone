@@ -1,5 +1,5 @@
-import { Headers } from "@cloudflare/workers-types";
 import { HELICONE_RATE_LIMITED_API_KEY_REGEX } from "../util/apiKeyRegex";
+import { BodyMappingType } from "@helicone-package/cost/models/types";
 
 type Nullable<T> = T | null;
 
@@ -13,6 +13,24 @@ export type HeliconeFallback = {
 };
 
 export type HeliconeBearerKeyType = "standard" | "rate-limited";
+export enum HeliconeTokenLimitExceptionHandler {
+  Truncate = "truncate",
+  MiddleOut = "middle-out",
+  Fallback = "fallback",
+}
+
+// Typed record ensures all enum values are mapped - TypeScript will error if a new value is added to the enum
+const TOKEN_LIMIT_HANDLER_MAP: Record<
+  HeliconeTokenLimitExceptionHandler,
+  HeliconeTokenLimitExceptionHandler
+> = {
+  [HeliconeTokenLimitExceptionHandler.Truncate]:
+    HeliconeTokenLimitExceptionHandler.Truncate,
+  [HeliconeTokenLimitExceptionHandler.MiddleOut]:
+    HeliconeTokenLimitExceptionHandler.MiddleOut,
+  [HeliconeTokenLimitExceptionHandler.Fallback]:
+    HeliconeTokenLimitExceptionHandler.Fallback,
+};
 
 export interface IHeliconeHeaders {
   heliconeAuth: Nullable<string>;
@@ -48,18 +66,24 @@ export interface IHeliconeHeaders {
     cacheSeed: Nullable<number>;
     cacheBucketMaxSize: Nullable<number>;
     cacheControl: Nullable<string>;
+    cacheIgnoreKeys: Nullable<string[]>;
   };
   promptName: Nullable<string>;
   userId: Nullable<string>;
+  gatewayConfig: {
+    bodyMapping: BodyMappingType;
+  };
   omitHeaders: {
     omitResponse: boolean;
     omitRequest: boolean;
   };
+  tokenLimitExceptionHandler: Nullable<HeliconeTokenLimitExceptionHandler>;
   sessionHeaders: {
     sessionId: Nullable<string>;
     path: Nullable<string>;
     name: Nullable<string>;
   };
+  stripeCustomerId: Nullable<string>;
   nodeId: Nullable<string>;
   fallBacks: Nullable<HeliconeFallback[]>;
   modelOverride: Nullable<string>;
@@ -104,6 +128,7 @@ export class HeliconeHeaders implements IHeliconeHeaders {
   openaiBaseUrl: Nullable<string>;
   targetBaseUrl: Nullable<string>;
   promptFormat: Nullable<string>;
+  stripeCustomerId: Nullable<string>;
   requestId: string;
   promptHeaders: {
     promptId: Nullable<string>;
@@ -115,10 +140,12 @@ export class HeliconeHeaders implements IHeliconeHeaders {
     cacheSeed: Nullable<number>;
     cacheBucketMaxSize: Nullable<number>;
     cacheControl: Nullable<string>;
+    cacheIgnoreKeys: Nullable<string[]>;
   };
   promptName: Nullable<string>;
   userId: Nullable<string>;
   omitHeaders: { omitResponse: boolean; omitRequest: boolean };
+  tokenLimitExceptionHandler: Nullable<HeliconeTokenLimitExceptionHandler>;
   sessionHeaders: {
     sessionId: Nullable<string>;
     path: Nullable<string>;
@@ -132,6 +159,9 @@ export class HeliconeHeaders implements IHeliconeHeaders {
   moderationsEnabled: boolean;
   posthogKey: Nullable<string>;
   posthogHost: Nullable<string>;
+  gatewayConfig: {
+    bodyMapping: BodyMappingType;
+  };
   webhookEnabled: boolean;
 
   experimentHeaders: {
@@ -165,9 +195,12 @@ export class HeliconeHeaders implements IHeliconeHeaders {
       cacheSeed: heliconeHeaders.cacheHeaders.cacheSeed,
       cacheBucketMaxSize: heliconeHeaders.cacheHeaders.cacheBucketMaxSize,
       cacheControl: heliconeHeaders.cacheHeaders.cacheControl,
-    }
+      cacheIgnoreKeys: heliconeHeaders.cacheHeaders.cacheIgnoreKeys,
+    };
     this.promptName = heliconeHeaders.promptName;
     this.omitHeaders = heliconeHeaders.omitHeaders;
+    this.tokenLimitExceptionHandler =
+      heliconeHeaders.tokenLimitExceptionHandler;
     this.sessionHeaders = heliconeHeaders.sessionHeaders;
     this.userId = heliconeHeaders.userId;
     this.heliconeProperties = this.getHeliconeProperties(heliconeHeaders);
@@ -182,6 +215,8 @@ export class HeliconeHeaders implements IHeliconeHeaders {
     this.posthogKey = heliconeHeaders.posthogKey;
     this.posthogHost = heliconeHeaders.posthogHost;
     this.webhookEnabled = heliconeHeaders.webhookEnabled;
+    this.gatewayConfig = heliconeHeaders.gatewayConfig;
+    this.stripeCustomerId = heliconeHeaders.stripeCustomerId;
 
     this.experimentHeaders = {
       columnId: heliconeHeaders.experimentHeaders.columnId,
@@ -258,7 +293,8 @@ export class HeliconeHeaders implements IHeliconeHeaders {
         keyType: this.determineBearerKeyType(heliconeAuth),
       };
     }
-    const heliconeAuthFallback = this.headers.get("authorization");
+    const heliconeAuthFallback =
+      this.headers.get("authorization") || this.headers.get("x-api-key");
     if (heliconeAuthFallback) {
       return {
         _type: "bearer",
@@ -298,6 +334,17 @@ export class HeliconeHeaders implements IHeliconeHeaders {
     this.modelOverride = modelOverride;
   }
 
+  private getGatewayConfig(): IHeliconeHeaders["gatewayConfig"] {
+    return {
+      bodyMapping: (() => {
+        const header = this.headers.get("Helicone-Gateway-Body-Mapping");
+        if (header === "NO_MAPPING") return "NO_MAPPING" as const;
+        if (header === "RESPONSES") return "RESPONSES" as const;
+        return "OPENAI" as const;
+      })(),
+    };
+  }
+
   private getHeliconeHeaders(): IHeliconeHeaders {
     const requestId = this.getValidUUID(
       this.headers.get("Helicone-Request-Id")
@@ -313,16 +360,28 @@ export class HeliconeHeaders implements IHeliconeHeaders {
       retryHeaders: this.getRetryHeaders(),
       promptFormat: this.headers.get("Helicone-Prompt-Format") ?? null,
       requestId: requestId,
+      stripeCustomerId: this.headers.get("x-stripe-customer-id") ?? null,
       promptHeaders: {
         promptId: this.headers.get("Helicone-Prompt-Id") ?? null,
         promptMode: this.headers.get("Helicone-Prompt-Mode") ?? null,
         promptVersion: this.headers.get("Helicone-Prompt-Version") ?? null,
       },
+      gatewayConfig: this.getGatewayConfig(),
       cacheHeaders: {
-        cacheEnabled: this.headers.get("Helicone-Cache-Enabled") === "true" ? true : false,
-        cacheSeed: this.headers.get("Helicone-Cache-Seed") ? parseInt(this.headers.get("Helicone-Cache-Seed") ?? "0") : null,
-        cacheBucketMaxSize: this.headers.get("Helicone-Cache-Bucket-Max-Size") ? parseInt(this.headers.get("Helicone-Cache-Bucket-Max-Size") ?? "0") : null,
+        cacheEnabled:
+          this.headers.get("Helicone-Cache-Enabled") === "true" ? true : false,
+        cacheSeed: this.headers.get("Helicone-Cache-Seed")
+          ? parseInt(this.headers.get("Helicone-Cache-Seed") ?? "0")
+          : null,
+        cacheBucketMaxSize: this.headers.get("Helicone-Cache-Bucket-Max-Size")
+          ? parseInt(this.headers.get("Helicone-Cache-Bucket-Max-Size") ?? "0")
+          : null,
         cacheControl: this.headers.get("Helicone-Cache-Control") ?? null,
+        cacheIgnoreKeys: this.headers.get("Helicone-Cache-Ignore-Keys")
+          ? JSON.parse(
+            `[${this.headers.get("Helicone-Cache-Ignore-Keys") ?? ""}]`
+          )
+          : null,
       },
       promptName: this.headers.get("Helicone-Prompt-Name") ?? null,
       userId: this.headers.get("Helicone-User-Id") ?? null,
@@ -330,6 +389,7 @@ export class HeliconeHeaders implements IHeliconeHeaders {
         omitResponse: this.headers.get("Helicone-Omit-Response") === "true",
         omitRequest: this.headers.get("Helicone-Omit-Request") === "true",
       },
+      tokenLimitExceptionHandler: this.getTokenLimitExceptionHandler(),
       sessionHeaders: {
         sessionId: this.headers.get("Helicone-Session-Id") ?? null,
         path: this.headers.get("Helicone-Session-Path") ?? null,
@@ -342,10 +402,11 @@ export class HeliconeHeaders implements IHeliconeHeaders {
         this.headers.get("Helicone-Model-Override") ??
         null,
       promptSecurityEnabled:
-        (this.headers.get("Helicone-LLM-Security-Enabled") ??
+        (
+          this.headers.get("Helicone-LLM-Security-Enabled") ??
           this.headers.get("Helicone-Prompt-Security-Enabled") ??
-          "").toLowerCase() === "true"
-      ,
+          ""
+        ).toLowerCase() === "true",
       promptSecurityAdvanced:
         this.headers.get("Helicone-LLM-Security-Advanced") ?? null,
       moderationsEnabled:
@@ -366,6 +427,16 @@ export class HeliconeHeaders implements IHeliconeHeaders {
       heliconeManualAccessKey:
         this.headers.get("Helicone-Manual-Access-Key") ?? null,
     };
+  }
+
+  private getTokenLimitExceptionHandler(): Nullable<HeliconeTokenLimitExceptionHandler> {
+    const handler = this.headers.get("Helicone-Token-Limit-Exception-Handler");
+    if (!handler) {
+      return null;
+    }
+
+    const normalized = handler.toLowerCase();
+    return TOKEN_LIMIT_HANDLER_MAP[normalized as HeliconeTokenLimitExceptionHandler] ?? null;
   }
 
   private getRetryHeaders(): IHeliconeHeaders["retryHeaders"] {
@@ -413,6 +484,12 @@ export class HeliconeHeaders implements IHeliconeHeaders {
         .map(([key, value]) => [key.substring(propTag.length), value])
     );
 
+    // Capture Stripe customer ID if provided
+    const stripeCustomerId = this.headers.get("x-stripe-customer-id");
+    if (stripeCustomerId) {
+      heliconePropertyHeaders["stripe_customer_id"] = stripeCustomerId;
+    }
+
     if (this.headers.get("Helicone-Posthog-Key")) {
       heliconePropertyHeaders["Helicone-Sent-To-Posthog"] = "true";
     }
@@ -441,19 +518,23 @@ export class HeliconeHeaders implements IHeliconeHeaders {
     }
 
     if (heliconeHeaders.cacheHeaders.cacheEnabled) {
-      heliconePropertyHeaders["Helicone-Cache-Enabled"] = heliconeHeaders.cacheHeaders.cacheEnabled.toString();
+      heliconePropertyHeaders["Helicone-Cache-Enabled"] =
+        heliconeHeaders.cacheHeaders.cacheEnabled.toString();
     }
 
     if (heliconeHeaders.cacheHeaders.cacheSeed) {
-      heliconePropertyHeaders["Helicone-Cache-Seed"] = heliconeHeaders.cacheHeaders.cacheSeed.toString();
+      heliconePropertyHeaders["Helicone-Cache-Seed"] =
+        heliconeHeaders.cacheHeaders.cacheSeed.toString();
     }
 
     if (heliconeHeaders.cacheHeaders.cacheBucketMaxSize) {
-      heliconePropertyHeaders["Helicone-Cache-Bucket-Max-Size"] = heliconeHeaders.cacheHeaders.cacheBucketMaxSize.toString();
+      heliconePropertyHeaders["Helicone-Cache-Bucket-Max-Size"] =
+        heliconeHeaders.cacheHeaders.cacheBucketMaxSize.toString();
     }
 
     if (heliconeHeaders.cacheHeaders.cacheControl) {
-      heliconePropertyHeaders["Helicone-Cache-Control"] = heliconeHeaders.cacheHeaders.cacheControl;
+      heliconePropertyHeaders["Helicone-Cache-Control"] =
+        heliconeHeaders.cacheHeaders.cacheControl;
     }
 
     return heliconePropertyHeaders;

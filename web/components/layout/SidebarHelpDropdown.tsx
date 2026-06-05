@@ -12,14 +12,16 @@ import clsx from "clsx";
 import {
   ArrowUpRightIcon,
   CalendarIcon,
-  FileTextIcon,
+  HelpCircle,
   MessageCircleMore,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FaDiscord } from "react-icons/fa6";
 import { ChangelogItem } from "./auth/types";
 import { useOrg } from "./org/organizationContext";
+import { useRouter } from "next/router";
 import Intercom from "@intercom/messenger-js-sdk";
 import { useHeliconeAuthClient } from "@/packages/common/auth/client/AuthClientFactory";
 import { usePathname } from "next/navigation";
@@ -43,6 +45,7 @@ const SidebarHelpDropdown = ({
 
   const [chatOpen, setChatOpen] = useState(false);
   const orgContext = useOrg();
+  const router = useRouter();
   const heliconeAuthClient = useHeliconeAuthClient();
   Intercom({
     app_id: INTERCOM_APP_ID,
@@ -55,13 +58,13 @@ const SidebarHelpDropdown = ({
   useEffect(() => {
     if (pathname?.includes("dashboard")) {
       // Only want to show on dashboard for now
-      Intercom({ app_id: INTERCOM_APP_ID, hide_default_launcher: false });
+      Intercom({ app_id: INTERCOM_APP_ID, hide_default_launcher: true });
     } else {
       Intercom({ app_id: INTERCOM_APP_ID, hide_default_launcher: true });
     }
   }, [pathname]);
   return (
-    <div className="w-full flex flex-col items-center gap-2">
+    <div className="mt-1.5 flex w-full flex-col items-center">
       <DropdownMenu
         modal={false}
         onOpenChange={
@@ -75,42 +78,53 @@ const SidebarHelpDropdown = ({
             variant="outline"
             size="none"
             className={clsx(
-              "h-9  flex items-center text-xs text-muted-foreground hover:text-foreground",
-              isCollapsed ? "w-9" : "w-full gap-1"
+              "flex h-8 items-center text-xs text-muted-foreground hover:text-foreground",
+              isCollapsed ? "w-8" : "w-full gap-2 px-3",
+              hasNewChangelog && "text-primary",
             )}
           >
             <div className="relative flex items-center">
-              <span
-                className={clsx(
-                  "font-medium text-xs",
-                  hasNewChangelog && "text-primary"
-                )}
-              >
-                ?
-              </span>
-              {hasNewChangelog && (
-                <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-destructive"></span>
-              )}
+              <HelpCircle size={16} />
             </div>
             {!isCollapsed && <span>Help</span>}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="ml-4 w-64 text-slate-700 dark:text-slate-200">
-          <Link href="https://docs.helicone.ai" target="_blank">
-            <DropdownMenuItem className="cursor-pointer">
-              <FileTextIcon className="h-4 w-4 mr-2 text-slate-500" />
-              Docs
-              <ArrowUpRightIcon className="h-3.5 w-3.5 ml-2 text-slate-400 dark:text-slate-600" />
-            </DropdownMenuItem>
-          </Link>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={() => router.push("/quickstart")}
+          >
+            <Zap className="mr-2 h-4 w-4 text-slate-500" />
+            Quickstart
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="cursor-pointer"
+            onSelect={() => {
+              setChatOpen(!chatOpen);
+              Intercom({
+                app_id: INTERCOM_APP_ID,
+                hide_default_launcher: !chatOpen,
+              });
+            }}
+          >
+            <MessageCircleMore className="mr-2 h-4 w-4 text-slate-500" />
+            Message us
+          </DropdownMenuItem>
           <Link href="https://discord.gg/zsSTcH2qhG" target="_blank">
             <DropdownMenuItem className="cursor-pointer">
-              <FaDiscord className="h-4 w-4 mr-2 text-slate-500" />
+              <FaDiscord className="mr-2 h-4 w-4 text-slate-500" />
               Help and Support
-              <ArrowUpRightIcon className="h-3.5 w-3.5 ml-2 text-slate-400 dark:text-slate-600" />
+              <ArrowUpRightIcon className="ml-2 h-3.5 w-3.5 text-slate-400 dark:text-slate-600" />
             </DropdownMenuItem>
           </Link>
-          <DropdownMenuLabel className="text-xs text-slate-400 dark:text-slate-600 font-medium mt-2">
+          <Link href="https://helicone.ai/contact" target="_blank">
+            <DropdownMenuItem className="cursor-pointer">
+              <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
+              Book call
+              <ArrowUpRightIcon className="ml-2 h-3.5 w-3.5 text-slate-400 dark:text-slate-600" />
+            </DropdownMenuItem>
+          </Link>
+          <DropdownMenuLabel className="mt-2 text-xs font-medium text-slate-400 dark:text-slate-600">
             What&apos;s new?
           </DropdownMenuLabel>
           {changelog.length === 0
@@ -135,7 +149,7 @@ const SidebarHelpDropdown = ({
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="lucide lucide-calendar-1 w-4 h-4 mr-2 text-slate-500"
+                    className="lucide lucide-calendar-1 mr-2 h-4 w-4 text-slate-500"
                   >
                     <text
                       x="50%"
@@ -159,40 +173,13 @@ const SidebarHelpDropdown = ({
               ))}
           <Link href="https://helicone.ai/changelog" target="_blank">
             <DropdownMenuItem className="cursor-pointer">
-              <CalendarIcon className="h-4 w-4 mr-2 text-slate-500" />
+              <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
               Full changelog
-              <ArrowUpRightIcon className="h-3.5 w-3.5 ml-2 text-slate-400 dark:text-slate-600" />
+              <ArrowUpRightIcon className="ml-2 h-3.5 w-3.5 text-slate-400 dark:text-slate-600" />
             </DropdownMenuItem>
           </Link>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <Button
-        variant="outline"
-        size="none"
-        onClick={() => {
-          setChatOpen(!chatOpen);
-          Intercom({
-            app_id: INTERCOM_APP_ID,
-            hide_default_launcher: !chatOpen,
-          });
-        }}
-        className={clsx(
-          "flex items-center text-xs text-muted-foreground hover:text-foreground",
-          isCollapsed ? "h-9 w-9" : "h-7 w-full gap-1",
-          chatOpen && "text-primary"
-        )}
-      >
-        <MessageCircleMore
-          size={12}
-          className={clsx(
-            chatOpen
-              ? "text-primary"
-              : "text-muted-foreground hover:text-primary"
-          )}
-        />
-        {!isCollapsed && <div>Message us</div>}
-      </Button>
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { PiSplitHorizontalBold } from "react-icons/pi";
@@ -21,6 +22,7 @@ import {
   LabelList,
   Tooltip as RechartsTooltip,
   ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   XAxis,
   YAxis,
@@ -54,7 +56,7 @@ export const TraceSpan = ({
   onHighlighterChange?: (
     start: number | null,
     end: number | null,
-    active: boolean
+    active: boolean,
   ) => void;
 }) => {
   const [selectedRequestId, setSelectedRequestId] = selectedRequestIdDispatch;
@@ -68,10 +70,16 @@ export const TraceSpan = ({
   const [highlighterEnd, setHighlighterEnd] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragEdge, setDragEdge] = useState<"start" | "end" | "middle" | null>(
-    null
+    null,
   );
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [initialDragMovement, setInitialDragMovement] = useState(false);
+
+  // Crosshair state for showing precise timestamp on hover
+  const [crosshairX, setCrosshairX] = useState<number | null>(null);
+  const [crosshairPixelX, setCrosshairPixelX] = useState<number | null>(null);
+  const [isHoveringChart, setIsHoveringChart] = useState(false);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   const spanData: BarChartTrace[] = useMemo(() => {
     if (!session || !session.traces) return [];
@@ -143,7 +151,7 @@ export const TraceSpan = ({
       const ratio = domainWidth / chartWidth;
       return domain[0] + pixelX * ratio;
     },
-    [domain]
+    [domain],
   );
 
   // Initialize highlighter position when data is loaded
@@ -234,12 +242,36 @@ export const TraceSpan = ({
         setLastChartDimensions({ width: e.width, height: e.height });
       }
     },
-    [lastChartDimensions]
+    [lastChartDimensions],
   );
 
-  // Handle mouse move for dragging the highlighter
+  // Handle mouse move for dragging the highlighter and updating crosshair
   const handleMouseMove = useCallback(
     (e: any) => {
+      // Update crosshair using native mouse position for accurate pixel placement
+      const container = chartContainerRef.current;
+      if (container && e.chartX !== undefined) {
+        const chartWidth = e.width || lastChartDimensions?.width || 1000;
+        const leftMargin = 20;
+        const rightMargin = 30;
+        const plotAreaWidth = chartWidth - leftMargin - rightMargin;
+
+        // Store pixel position for CSS positioning
+        setCrosshairPixelX(e.chartX);
+
+        // Calculate domain value for the label
+        const adjustedX = e.chartX - leftMargin;
+        if (adjustedX >= 0 && adjustedX <= plotAreaWidth) {
+          const ratio = adjustedX / plotAreaWidth;
+          const xDomain = domain[0] + ratio * (domain[1] - domain[0]);
+          setCrosshairX(xDomain);
+          // Set hovering true when we have valid coordinates (more reliable than onMouseEnter)
+          setIsHoveringChart(true);
+        } else {
+          setCrosshairX(null);
+        }
+      }
+
       if (
         !isDragging ||
         !highlighterActive ||
@@ -250,15 +282,15 @@ export const TraceSpan = ({
       )
         return;
 
-      // Ensure we have a valid chartX value
-      const chartX = e.chartX;
-      if (typeof chartX !== "number") return;
+      // Get chartX for drag handling
+      const dragChartX = e.chartX;
+      if (typeof dragChartX !== "number") return;
 
       // Consistently track chart dimensions
-      const chartWidth = e.width || lastChartDimensions?.width || 1000;
       updateChartDimensions(e);
+      const dragChartWidth = e.width || lastChartDimensions?.width || 1000;
 
-      const deltaX = chartX - dragStartX;
+      const deltaX = dragChartX - dragStartX;
 
       // Skip tiny movements to reduce jitter
       if (Math.abs(deltaX) < 2) return;
@@ -270,11 +302,11 @@ export const TraceSpan = ({
 
       // Direct ratio calculation for movement - simpler and more accurate
       const domainWidth = domain[1] - domain[0];
-      const domainDeltaX = (deltaX / chartWidth) * domainWidth;
+      const domainDeltaX = (deltaX / dragChartWidth) * domainWidth;
 
       // Don't update highlighter during initial movement
       if (!initialDragMovement) {
-        setDragStartX(chartX);
+        setDragStartX(dragChartX);
         return;
       }
 
@@ -286,13 +318,13 @@ export const TraceSpan = ({
         // Dragging left edge
         newStart = Math.max(
           domain[0],
-          Math.min(highlighterEnd - minSize, highlighterStart + domainDeltaX)
+          Math.min(highlighterEnd - minSize, highlighterStart + domainDeltaX),
         );
       } else if (dragEdge === "end") {
         // Dragging right edge
         newEnd = Math.min(
           domain[1],
-          Math.max(highlighterStart + minSize, highlighterEnd + domainDeltaX)
+          Math.max(highlighterStart + minSize, highlighterEnd + domainDeltaX),
         );
       } else if (dragEdge === "middle") {
         // Dragging the entire highlighter
@@ -319,7 +351,7 @@ export const TraceSpan = ({
       setHighlighterEnd(newEnd);
 
       // Always update dragStartX to prevent accumulation of small movements
-      setDragStartX(chartX);
+      setDragStartX(dragChartX);
 
       // Prevent default behavior and stop propagation
       e.preventDefault?.();
@@ -336,8 +368,20 @@ export const TraceSpan = ({
       lastChartDimensions,
       initialDragMovement,
       updateChartDimensions,
-    ]
+      pixelToDomain,
+    ],
   );
+
+  // Handle mouse enter/leave for crosshair visibility
+  const handleMouseEnter = useCallback(() => {
+    setIsHoveringChart(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHoveringChart(false);
+    setCrosshairX(null);
+    setCrosshairPixelX(null);
+  }, []);
 
   // Handle mouse down on the chart for dragging the highlighter
   const handleMouseDown = useCallback(
@@ -390,7 +434,7 @@ export const TraceSpan = ({
       pixelToDomain,
       lastChartDimensions,
       updateChartDimensions,
-    ]
+    ],
   );
 
   // Unified mouse handler for reference areas
@@ -418,7 +462,7 @@ export const TraceSpan = ({
       updateChartDimensions(e);
       setDragStartX(eventX);
     },
-    [highlighterActive, updateChartDimensions]
+    [highlighterActive, updateChartDimensions],
   );
 
   // Handle mouse up to end dragging
@@ -486,7 +530,7 @@ export const TraceSpan = ({
     if (onHighlighterChange) {
       // For a single message click, set the range to just this message's index
       const messageIndex = spanData.findIndex(
-        (item) => item.request_id === clickedData.request_id
+        (item) => item.request_id === clickedData.request_id,
       );
       if (messageIndex !== -1) {
         // Set both start and end to the same index to indicate a single message
@@ -497,14 +541,15 @@ export const TraceSpan = ({
 
   return (
     <div
-      className="relative h-full flex flex-col select-none"
+      className="relative flex h-full select-none flex-col"
       id="sessions-trace-span"
     >
-      <ScrollArea>
-        <ResponsiveContainer
-          width="100%"
-          height={Math.max(300, spanData.length * BAR_SIZE)}
-        >
+      <div ref={chartContainerRef} className="relative flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <ResponsiveContainer
+            width="100%"
+            height={Math.max(300, spanData.length * BAR_SIZE)}
+          >
           <BarChart
             data={spanData}
             layout="vertical"
@@ -514,7 +559,11 @@ export const TraceSpan = ({
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={(e) => {
+              handleMouseUp();
+              handleMouseLeave();
+            }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -553,8 +602,8 @@ export const TraceSpan = ({
                 fill: highlighterActive
                   ? "transparent"
                   : theme === "dark"
-                  ? "#020617" // slate-950
-                  : "#f8fafc", // slate-50
+                    ? "#020617" // slate-950
+                    : "#f8fafc", // slate-50
               }}
               content={(props) => {
                 const { payload } = props;
@@ -569,14 +618,14 @@ export const TraceSpan = ({
                 const duration = traceData.duration;
 
                 return (
-                  <Col className="gap-2 rounded glass border border-slate-200 dark:border-slate-800 z-50 p-2">
+                  <Col className="glass z-50 gap-2 rounded border border-slate-200 p-2 dark:border-slate-800">
                     <Row className="justify-between">
-                      <Row className="gap-2 items-center">
+                      <Row className="items-center gap-2">
                         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                           {traceData?.name}
                         </h3>
                       </Row>
-                      <Row className="gap-1 items-center">
+                      <Row className="items-center gap-1">
                         <Clock4Icon
                           width={16}
                           height={16}
@@ -646,6 +695,10 @@ export const TraceSpan = ({
 
                   const isSelected = isInHighlighter || isIndividuallySelected;
 
+                  const barMidpoint = entry.start + entry.duration / 2;
+                  const domainMidpoint = (domain[0] + domain[1]) / 2;
+                  const isOnRightHalf = barMidpoint > domainMidpoint;
+
                   return (
                     <text
                       x={typeof x === "number" ? x + 5 : x}
@@ -662,7 +715,7 @@ export const TraceSpan = ({
                           : "fill-card-foreground"
                       }
                       opacity={isSelected ? 1 : 0.7}
-                      textAnchor="start"
+                      textAnchor={isOnRightHalf ? "end" : "start"}
                       dominantBaseline="central"
                       style={{
                         fontSize: "12px",
@@ -754,7 +807,7 @@ export const TraceSpan = ({
                   <ReferenceArea
                     x1={Math.max(
                       domain[0],
-                      highlighterStart - (domain[1] - domain[0]) * 0.02
+                      highlighterStart - (domain[1] - domain[0]) * 0.02,
                     )}
                     x2={highlighterStart + (domain[1] - domain[0]) * 0.02}
                     y1={0}
@@ -769,7 +822,7 @@ export const TraceSpan = ({
                     x1={highlighterEnd - (domain[1] - domain[0]) * 0.02}
                     x2={Math.min(
                       domain[1],
-                      highlighterEnd + (domain[1] - domain[0]) * 0.02
+                      highlighterEnd + (domain[1] - domain[0]) * 0.02,
                     )}
                     y1={0}
                     y2={spanData.length - 1}
@@ -780,9 +833,38 @@ export const TraceSpan = ({
                   />
                 </>
               )}
+
           </BarChart>
-        </ResponsiveContainer>
-      </ScrollArea>
+          </ResponsiveContainer>
+        </ScrollArea>
+
+        {/* CSS-positioned crosshair overlay */}
+        {isHoveringChart && crosshairPixelX !== null && crosshairX !== null && !isDragging && (
+          <div
+            className="pointer-events-none absolute top-0 z-10"
+            style={{
+              left: crosshairPixelX,
+              height: "100%",
+            }}
+          >
+            <div
+              className="h-full border-l border-dashed"
+              style={{
+                borderColor: theme === "dark" ? "#94a3b8" : "#64748b",
+              }}
+            />
+            <div
+              className="absolute -top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium"
+              style={{
+                backgroundColor: theme === "dark" ? "#334155" : "#f1f5f9",
+                color: theme === "dark" ? "#e2e8f0" : "#334155",
+              }}
+            >
+              {crosshairX.toFixed(3)}s
+            </div>
+          </div>
+        )}
+      </div>
       <ResponsiveContainer width="100%" height={52}>
         <BarChart
           data={spanData}
@@ -811,7 +893,7 @@ export const TraceSpan = ({
           variant={highlighterActive ? "default" : "glass"}
           size="sm"
           onClick={toggleHighlighter}
-          className="absolute top-4 right-4 gap-2"
+          className="absolute right-4 top-4 gap-2"
         >
           <PiSplitHorizontalBold
             size={18}

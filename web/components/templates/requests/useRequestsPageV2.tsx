@@ -6,7 +6,7 @@ import { getTimeIntervalAgo } from "../../../lib/timeCalculations/time";
 import { useModels } from "../../../services/hooks/models";
 import { useGetPropertiesV2 } from "../../../services/hooks/propertiesV2";
 import { useGetRequests } from "../../../services/hooks/requests";
-import { FilterNode } from "@helicone-package/filters/filterDefs";
+import { FilterLeaf, FilterNode } from "@helicone-package/filters/filterDefs";
 import {
   getPropertyFiltersV2,
   REQUEST_TABLE_FILTERS,
@@ -16,7 +16,7 @@ import {
 import { filterUITreeToFilterNode } from "@helicone-package/filters/helpers";
 import { SortLeafRequest } from "../../../services/lib/sorts/requests/sorts";
 import { useFilterAST } from "@/filterAST/context/filterContext";
-import { toFilterNode } from "@/filterAST/toFilterNode";
+import { toFilterNode } from "@helicone-package/filters/toFilterNode";
 
 const useRequestsPageV2 = (
   currentPage: number,
@@ -26,7 +26,7 @@ const useRequestsPageV2 = (
   sortLeaf: SortLeafRequest,
   isCached: boolean,
   isLive: boolean,
-  rateLimited?: boolean
+  rateLimited?: boolean,
 ) => {
   const filterStore = useFilterAST();
   const [timeFilter] = useState<TimeFilter>({
@@ -44,12 +44,12 @@ const useRequestsPageV2 = (
   const { models, isLoading: isModelsLoading } = useModels(timeFilter, 50);
 
   const filterMap = (REQUEST_TABLE_FILTERS as SingleFilterDef<any>[]).concat(
-    Array.isArray(propertyFilters) ? propertyFilters : []
+    Array.isArray(propertyFilters) ? propertyFilters : [],
   );
 
   // replace the model filter inside of the filterMap with the text suggestion model
   const modelFilterIdx = filterMap.findIndex(
-    (filter) => filter.label === "Model"
+    (filter) => filter.label === "Model",
   );
   if (modelFilterIdx !== -1) {
     filterMap[modelFilterIdx] = {
@@ -59,12 +59,12 @@ const useRequestsPageV2 = (
           new Set(
             models?.data
               ?.filter((model) => model.model)
-              .map((model) => model.model)
-          )
+              .map((model) => model.model),
+          ),
         ).map((modelName) => ({
           key: modelName,
           param: modelName,
-        })) || []
+        })) || [],
       ),
       table: "request_response_rmt",
       column: "model",
@@ -72,18 +72,20 @@ const useRequestsPageV2 = (
     };
   }
 
-  const rateLimitFilterMapIndex = filterMap.findIndex(
-    (filter: any) => filter.label?.trim() === "Helicone-Rate-Limit-Status"
-  );
-
-  let rateLimitFilterNode: FilterNode = "all";
-  if (rateLimited && rateLimitFilterMapIndex !== -1) {
-    rateLimitFilterNode = filterUITreeToFilterNode(filterMap, {
-      filterMapIdx: rateLimitFilterMapIndex,
-      operatorIdx: 0,
-      value: "rate_limited",
-    });
-  }
+  // Build rate limit filter directly instead of looking it up in filterMap
+  // This ensures it works even if the property hasn't been used yet
+  // Use empty object {} to match all when not filtering by rate limited
+  const rateLimitFilterNode: FilterNode = rateLimited
+    ? {
+        request_response_rmt: {
+          properties: {
+            "Helicone-Rate-Limit-Status": {
+              equals: "bucket_rate_limited",
+            },
+          },
+        },
+      }
+    : {};
 
   // sort the model by name
   models?.data?.sort((a, b) => a.model.localeCompare(b.model));
@@ -93,7 +95,7 @@ const useRequestsPageV2 = (
       left: filterUITreeToFilterNode(filterMap, uiFilterIdxs),
       right: filterStore.store.filter
         ? toFilterNode(filterStore.store.filter)
-        : "all",
+        : ({} as FilterLeaf),
       operator: "and",
     },
     // Combine with only the conditional Rate Limit Filter
@@ -114,7 +116,7 @@ const useRequestsPageV2 = (
     filter,
     sortLeaf,
     isCached,
-    isLive
+    isLive,
   );
 
   const isDataLoading = requests.isLoading || isPropertiesLoading;

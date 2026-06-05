@@ -5,6 +5,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChangelogItem } from "./auth/types";
+import DOMPurify from "dompurify";
 
 const ChangelogModal = ({
   open,
@@ -18,9 +19,9 @@ const ChangelogModal = ({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {changelog && (
-        <DialogContent className="w-[95vw] sm:w-full max-w-xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-h-[80vh] w-[95vw] max-w-xl overflow-y-auto sm:w-full">
           <DialogHeader className="mt-2">
-            <DialogTitle className="flex justify-between items-end text-[20px]">
+            <DialogTitle className="flex items-end justify-between text-[20px]">
               {changelog.title}
               <small className="text-xs text-slate-500">
                 {new Date(changelog.pubDate).toLocaleDateString()}
@@ -29,14 +30,14 @@ const ChangelogModal = ({
           </DialogHeader>
           <div className="flex flex-col gap-4">
             {changelog.image && (
-              <div className="w-full h-full">
+              <div className="h-full w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={changelog.image.url} alt={changelog.title} />
               </div>
             )}
             <div
-              className="prose dark:prose-invert prose-sm prose-h2:text-base prose-h3:text-base"
-              dangerouslySetInnerHTML={{ __html: changelog["content:encoded"] }}
+              className="prose prose-sm dark:prose-invert prose-h2:text-base prose-h3:text-base"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(changelog["content:encoded"]) }}
             />
           </div>
         </DialogContent>

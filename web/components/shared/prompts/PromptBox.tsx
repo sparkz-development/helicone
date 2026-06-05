@@ -5,7 +5,7 @@ import { createSelectionRange } from "@/utils/selection";
 import { toCamelCase, toSnakeCase } from "@/utils/strings";
 import { getVariableStatus, isVariable } from "@/utils/variables";
 
-import { generateStream } from "@/lib/api/llm/generate-stream";
+import { generateStream } from "@/lib/api/llm-old/generate-stream";
 import autoCompletePrompt from "@/prompts/auto-complete";
 import performEditPrompt, { suggestions } from "@/prompts/perform-edit";
 import { $assistant, $system, $user } from "@/utils/generate";
@@ -18,9 +18,10 @@ import {
 
 import Toolbar from "@/components/shared/prompts/Toolbar";
 import LoadingDots from "@/components/shared/universal/LoadingDots";
-import { processStream } from "@/lib/api/llm/process-stream";
+import { processStream } from "@/lib/api/llm-old/process-stream";
 import { MdKeyboardTab } from "react-icons/md";
 import { PiChatDotsBold } from "react-icons/pi";
+import { logger } from "@/lib/telemetry/logger";
 
 type SelectionState = {
   text: string;
@@ -191,7 +192,7 @@ export default function PromptBox({
             temperature: 0.7,
             signal: controller.signal,
           },
-          { headers: { "x-cancel": "0" } }
+          { headers: { "x-cancel": "0" } },
         );
 
         await processStream(
@@ -206,7 +207,7 @@ export default function PromptBox({
               });
             },
           },
-          controller.signal
+          controller.signal,
         );
 
         // console.log("Stopped streaming");
@@ -216,7 +217,7 @@ export default function PromptBox({
         }
       } catch (error) {
         if (error instanceof Error && error.name !== "AbortError") {
-          console.error("Error fetching suggestion:", error);
+          logger.error({ error }, "Error fetching suggestion");
         }
         dispatch({ type: "STOP_STREAMING" });
         if (abortControllerRef.current === controller) {
@@ -270,7 +271,7 @@ export default function PromptBox({
         document.execCommand(
           "insertText",
           false,
-          cleanSuggestionIfNeeded(value, suggestionState.suggestion)
+          cleanSuggestionIfNeeded(value, suggestionState.suggestion),
         );
         onChange(textarea.value);
       }
@@ -311,10 +312,7 @@ export default function PromptBox({
       if (isVariable(part)) {
         const varContent = part.slice(2, -2);
         const varName = varContent.trim();
-        const { isValid, hasValue, value } = getVariableStatus(
-          varName,
-          variables
-        );
+        const { isValid, hasValue } = getVariableStatus(varName, variables);
 
         return (
           <span
@@ -323,8 +321,8 @@ export default function PromptBox({
               !isValid
                 ? "text-tertiary line-through"
                 : hasValue
-                ? "text-heliblue"
-                : "text-red-500"
+                  ? "text-heliblue"
+                  : "text-red-500"
             }`}
           >
             {part}
@@ -342,7 +340,6 @@ export default function PromptBox({
     const textarea = textareaRef.current;
     const pre = textarea.nextElementSibling as HTMLPreElement;
     const viewPortWidth = window.innerWidth;
-    const viewPortHeight = window.innerHeight;
     if (!pre) return;
     const toolbox = toolboxRef.current;
     if (!toolbox) return;
@@ -351,13 +348,13 @@ export default function PromptBox({
     // Step 2. Get all client rects for the range to handle multi-line selections
     const selectionRange = createSelectionRange(pre, selection);
     if (!selectionRange) return;
-    const { range, preRect } = selectionRange;
+    const { range } = selectionRange;
     const rects = Array.from(range.getClientRects());
     const firstRect = rects[0];
     const lastRect = rects[rects.length - 1];
     const leftmostRect = Math.min(...rects.map((rect) => rect.left));
     const rightmostRect = Math.max(
-      ...rects.map((rect) => rect.left + rect.width)
+      ...rects.map((rect) => rect.left + rect.width),
     );
 
     // Step 3. Calculate fake highlight positions
@@ -372,7 +369,10 @@ export default function PromptBox({
     const selectionCenter = leftmostRect + (rightmostRect - leftmostRect) / 2;
     const toolbarLeft = Math.max(
       0,
-      Math.min(selectionCenter - toolboxWidth / 2, viewPortWidth - toolboxWidth)
+      Math.min(
+        selectionCenter - toolboxWidth / 2,
+        viewPortWidth - toolboxWidth,
+      ),
     );
     const toolbarTop = firstRect.top - 2;
 
@@ -402,7 +402,7 @@ export default function PromptBox({
           requestAnimationFrame(updateToolboxPosition);
         }
       },
-      { threshold: [0, 1] }
+      { threshold: [0, 1] },
     );
 
     // Add scroll listener to parent elements
@@ -497,7 +497,7 @@ export default function PromptBox({
         }
       });
     },
-    [onChange, handleSelection]
+    [onChange, handleSelection],
   );
 
   // TOOLBAR: EDIT - HANDLERS
@@ -514,7 +514,7 @@ export default function PromptBox({
       instruction,
       selection.text,
       value.slice(0, selection.selectionStart),
-      value.slice(selection.selectionEnd)
+      value.slice(selection.selectionEnd),
     );
 
     try {
@@ -540,7 +540,7 @@ export default function PromptBox({
           stop: ["</edited_target>"],
           signal: controller.signal, // Pass signal to generateStream
         },
-        { headers: { "x-cancel": "0" } }
+        { headers: { "x-cancel": "0" } },
       );
 
       // Use processStream for the edit generation
@@ -550,15 +550,15 @@ export default function PromptBox({
           initialState: { content: "", reasoning: "", calls: "" }, // Initial state
           onUpdate: (result) => {
             setPendingEdit((prev) =>
-              prev ? { ...prev, generatedText: result.content.trim() } : null
+              prev ? { ...prev, generatedText: result.content.trim() } : null,
             );
           },
         },
-        controller.signal // Pass signal to processStream
+        controller.signal, // Pass signal to processStream
       );
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
-        console.error("Error generating edit:", error);
+        logger.error({ error }, "Error generating edit");
         setPendingEdit(null); // Clear pending edit on non-abort error
       }
       // If it was an abort error, pendingEdit might have already been cleared by handleDenyEdit
@@ -581,7 +581,7 @@ export default function PromptBox({
         textareaRef.current.focus();
         textareaRef.current.setSelectionRange(
           pendingEdit.start,
-          pendingEdit.start + pendingEdit.generatedText.length
+          pendingEdit.start + pendingEdit.generatedText.length,
         );
         handleSelection();
       }
@@ -669,8 +669,8 @@ export default function PromptBox({
   return (
     <div
       ref={containerRef}
-      className={`relative h-full w-full group grid grid-cols-1 grid-rows-1 focus-within:border-transparent dark:border-slate-800 caret-black dark:caret-white ${
-        disabled ? "opacity-50 cursor-not-allowed" : ""
+      className={`group relative grid h-full w-full grid-cols-1 grid-rows-1 caret-black focus-within:border-transparent dark:border-slate-800 dark:caret-white ${
+        disabled ? "cursor-not-allowed opacity-50" : ""
       }`}
     >
       <textarea
@@ -683,7 +683,7 @@ export default function PromptBox({
         placeholder="Type your prompt..."
         disabled={disabled}
         style={sharedTextAreaStyles}
-        className="text-transparent bg-transparent resize-none"
+        className="resize-none bg-transparent text-transparent"
       />
       <pre
         aria-hidden="true"

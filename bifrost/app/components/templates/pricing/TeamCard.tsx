@@ -21,22 +21,21 @@ const TeamCard: React.FC = () => {
               <Badge variant="secondary">BEST VALUE</Badge>
             </Row>
             <Row className="items-center gap-0.5">
-              <div className="text-accent-foreground text-3xl font-bold">$200</div>
+              <div className="text-accent-foreground text-3xl font-bold">$799</div>
               <div className="text-accent-foreground text-lg font-semibold">
                 per month
               </div>
             </Row>
             <div className="text-sidebar-foreground text-sm font-normal">
-              For growing companies.
+              For scaling companies.
             </div>
           </Col>
 
           <Col>
             {[
               "Everything in Pro",
-              "Unlimited seats",
-              "Prompts, Experiments and Evals.",
-              "SOC-2 Compliance & HIPAA",
+              "5 organizations",
+              "SOC-2 & HIPAA compliance",
               "Dedicated Slack channel",
             ].map((feature, index) => (
               <div key={index} className="py-1.5 flex items-center gap-2">
@@ -50,6 +49,10 @@ const TeamCard: React.FC = () => {
             ))}
           </Col>
         </Col>
+
+        <div className="text-xs text-muted-foreground mt-2">
+          * Usage-based pricing applies
+        </div>
 
         <Link href="https://us.helicone.ai/settings/billing">
           <Button variant="secondary" className="w-full text-base py-5">

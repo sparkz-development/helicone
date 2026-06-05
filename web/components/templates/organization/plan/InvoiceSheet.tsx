@@ -27,6 +27,7 @@ export const InvoiceSheet: React.FC = () => {
 
       return invoice;
     },
+    enabled: !!org?.currentOrg?.id,
   });
 
   const formatCurrency = (amount: number) => {
@@ -52,44 +53,44 @@ export const InvoiceSheet: React.FC = () => {
             Details of your next billing cycle
           </SheetDescription>
         </SheetHeader>
-        <div className="mt-6 space-y-6">
+        <div className="mt-6 flex flex-col gap-6">
           {upcomingInvoice.isLoading ? (
             <p>Loading invoice details...</p>
           ) : upcomingInvoice.error ? (
             <p>Error loading invoice. Please try again.</p>
           ) : upcomingInvoice.data?.data ? (
             <>
-              <div className="flex justify-between items-center">
+              <div className="flex items-center justify-between">
                 <span className="font-semibold">Total Due:</span>
                 <span className="text-xl font-bold">
                   {formatCurrency(
                     upcomingInvoice.data.data.total +
                       upcomingInvoice.data.data.experiments_usage.reduce(
                         (acc, item) => acc + item.amount,
-                        0
-                      )
+                        0,
+                      ),
                   )}
                 </span>
               </div>
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-muted-foreground">
                 Due Date:{" "}
                 {new Date(
-                  upcomingInvoice.data.data.next_payment_attempt! * 1000
+                  upcomingInvoice.data.data.next_payment_attempt! * 1000,
                 ).toLocaleDateString()}
               </div>
               <div className="border-t pt-4">
-                <h3 className="font-semibold mb-2">Line Items:</h3>
-                <div className="space-y-3">
+                <h3 className="mb-2 font-semibold">Line Items:</h3>
+                <div className="flex flex-col gap-3">
                   {upcomingInvoice.data.data.lines?.data.map(
                     (item: any, index: number) => (
                       <div
                         key={index}
-                        className="flex justify-between items-center text-sm"
+                        className="flex items-center justify-between text-sm"
                       >
                         <span>{item.description}</span>
                         <span>{formatCurrency(item.amount)}</span>
                       </div>
-                    )
+                    ),
                   )}
                   {upcomingInvoice.data.data.experiments_usage.length > 0 && (
                     <>
@@ -108,14 +109,14 @@ export const InvoiceSheet: React.FC = () => {
                               prompt_token: number;
                             };
                           },
-                          index: number
+                          index: number,
                         ) => (
                           <LLMUsageItem
                             item={item}
                             formatCurrency={formatCurrency}
                             key={index}
                           />
-                        )
+                        ),
                       )}
                     </>
                   )}
@@ -136,14 +137,14 @@ export const InvoiceSheet: React.FC = () => {
                               prompt_token: number;
                             };
                           },
-                          index: number
+                          index: number,
                         ) => (
                           <LLMUsageItem
                             item={item}
                             formatCurrency={formatCurrency}
                             key={index}
                           />
-                        )
+                        ),
                       )}
                     </>
                   )}
@@ -151,8 +152,8 @@ export const InvoiceSheet: React.FC = () => {
               </div>
               {upcomingInvoice.data.data.discount && (
                 <div className="border-t pt-4">
-                  <h3 className="font-semibold mb-2">Discount:</h3>
-                  <div className="text-sm flex items-center gap-2 justify-between">
+                  <h3 className="mb-2 font-semibold">Discount:</h3>
+                  <div className="flex items-center justify-between gap-2 text-sm">
                     <span className="">
                       {upcomingInvoice.data.data.discount.coupon.name}
                     </span>
@@ -167,28 +168,28 @@ export const InvoiceSheet: React.FC = () => {
                   </div>
                 </div>
               )}
-              <div className="border-t pt-4 space-y-2">
-                <div className="flex justify-between items-center text-sm">
+              <div className="flex flex-col gap-2 border-t pt-4">
+                <div className="flex items-center justify-between text-sm">
                   <span>Subtotal:</span>
                   <span>
                     {formatCurrency(upcomingInvoice.data.data.subtotal)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-sm">
+                <div className="flex items-center justify-between text-sm">
                   <span>Tax:</span>
                   <span>
                     {formatCurrency(upcomingInvoice.data.data.tax ?? 0)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center font-semibold">
+                <div className="flex items-center justify-between font-semibold">
                   <span>Total:</span>
                   <span>
                     {formatCurrency(
                       upcomingInvoice.data.data.total +
                         upcomingInvoice.data.data.experiments_usage.reduce(
                           (acc, item) => acc + item.amount,
-                          0
-                        )
+                          0,
+                        ),
                     )}
                   </span>
                 </div>

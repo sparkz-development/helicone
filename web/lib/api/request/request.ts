@@ -1,10 +1,10 @@
-import { LlmSchema } from "@helicone-package/llm-mapper/types";
 import { ProviderName } from "@helicone-package/cost/providers/mappings";
 import { FilterNode } from "@helicone-package/filters/filterDefs";
 import {
   buildFilterWithAuth,
   buildFilterWithAuthClickHouse,
 } from "@helicone-package/filters/filters";
+import { HeliconeRequest } from "@helicone-package/llm-mapper/types";
 import {
   SortLeafRequest,
   buildRequestSort,
@@ -15,56 +15,12 @@ import { dbExecute, dbQueryClickhouse } from "../db/dbExecute";
 export type Provider = ProviderName | "CUSTOM";
 const MAX_TOTAL_BODY_SIZE = 3 * 1024 * 1024;
 
-export interface HeliconeRequest {
-  response_id: string | null;
-  response_created_at: string | null;
-  response_body?: any;
-  response_status: number;
-  response_model: string | null;
-  request_id: string;
-  request_created_at: string;
-  request_body: any;
-  request_path: string;
-  request_user_id: string | null;
-  request_properties: Record<string, string> | null;
-  request_model: string | null;
-  model_override: string | null;
-  helicone_user: string | null;
-  provider: Provider;
-  delay_ms: number | null;
-  time_to_first_token: number | null;
-  total_tokens: number | null;
-  prompt_tokens: number | null;
-  prompt_cache_write_tokens: number | null;
-  prompt_cache_read_tokens: number | null;
-  completion_tokens: number | null;
-  prompt_audio_tokens: number | null;
-  completion_audio_tokens: number | null;
-  prompt_id: string | null;
-  feedback_created_at?: string | null;
-  feedback_id?: string | null;
-  feedback_rating?: boolean | null;
-  signed_body_url?: string | null;
-  llmSchema: LlmSchema | null;
-  country_code: string | null;
-  asset_ids: string[] | null;
-  asset_urls: Record<string, string> | null;
-  scores: Record<string, number> | null;
-  costUSD?: number | null;
-  properties: Record<string, string>;
-  assets: Array<string>;
-  target_url: string;
-  model: string;
-  cache_reference_id: string | null;
-  cache_enabled: boolean;
-}
-
 export async function getRequests(
   orgId: string,
   filter: FilterNode,
   offset: number,
   limit: number,
-  sort: SortLeafRequest
+  sort: SortLeafRequest,
 ): Promise<Result<HeliconeRequest[], string>> {
   if (isNaN(offset) || isNaN(limit)) {
     return { data: null, error: "Invalid offset or limit" };
@@ -138,7 +94,7 @@ export async function getRequests(
 
 export async function getRequestsDateRange(
   orgId: string,
-  filter: FilterNode
+  filter: FilterNode,
 ): Promise<Result<{ min: Date; max: Date }, string>> {
   const builtFilter = await buildFilterWithAuth({
     org_id: orgId,
@@ -155,7 +111,7 @@ export async function getRequestsDateRange(
 
   const res = await dbExecute<{ min: Date; max: Date }>(
     query,
-    builtFilter.argsAcc
+    builtFilter.argsAcc,
   );
 
   return resultMap(res, (data) => {
@@ -168,7 +124,7 @@ export async function getRequestsDateRange(
 
 export async function getRequestCount(
   org_id: string,
-  filter: FilterNode
+  filter: FilterNode,
 ): Promise<Result<number, string>> {
   const builtFilter = await buildFilterWithAuth({
     org_id,
@@ -188,7 +144,7 @@ export async function getRequestCount(
   `;
   const { data, error } = await dbExecute<{ count: number }>(
     query,
-    builtFilter.argsAcc
+    builtFilter.argsAcc,
   );
   if (error !== null) {
     return { data: null, error: error };
@@ -199,7 +155,7 @@ export async function getRequestCount(
 export async function getRequestCountClickhouse(
   org_id: string,
   filter: FilterNode,
-  isCached = false
+  isCached = false,
 ): Promise<Result<number, string>> {
   const builtFilter = await buildFilterWithAuthClickHouse({
     org_id,
@@ -216,7 +172,7 @@ ${isCached ? "AND cache_enabled = 1" : ""}
 `;
   const { data, error } = await dbQueryClickhouse<{ count: number }>(
     query,
-    builtFilter.argsAcc
+    builtFilter.argsAcc,
   );
   if (error !== null) {
     return { data: null, error: error };

@@ -3,6 +3,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import Stripe from "stripe";
 import { dbExecute } from "../../../../lib/api/db/dbExecute";
+import { logger } from "@/lib/telemetry/logger";
 import { resultMap } from "@/packages/common/result";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -11,7 +12,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse
+  res: NextApiResponse,
 ) {
   if (req.method !== "POST") {
     return res.status(405).end();
@@ -32,11 +33,16 @@ export default async function handler(
       await dbExecute<{
         stripe_customer_id: string;
       }>("SELECT * FROM organization WHERE id = $1", [orgId]),
-      (d) => d?.[0]
+      (d) => d?.[0],
     );
 
     if (orgError !== null) {
-      console.error(orgError);
+      logger.error(
+        {
+          orgError,
+        },
+        "Unable to find org",
+      );
       res.status(400).send(`Unable to find org: ${orgError}`);
       return;
     }
@@ -53,11 +59,16 @@ export default async function handler(
 
       const { error: updateError } = await dbExecute(
         "UPDATE organization SET stripe_customer_id = $1 WHERE id = $2",
-        [customerId, orgId]
+        [customerId, orgId],
       );
 
       if (updateError !== null) {
-        console.error(updateError);
+        logger.error(
+          {
+            updateError,
+          },
+          "Unable to update org",
+        );
         res.status(400).send(`Unable to update org: ${updateError}`);
         return;
       }

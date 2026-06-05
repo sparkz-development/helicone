@@ -78,6 +78,50 @@ export const costs: ModelRow[] = [
   },
   {
     model: {
+      operator: "equals",
+      value: "gemini-2.5-flash",
+    },
+    cost: {
+      prompt_token: 0.00000030,
+      completion_token: 0.0000025,
+      prompt_cache_read_token: 0.000000075,
+    }
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-2.5-flash-preview-image",
+    },
+    cost: {
+      prompt_token: 0.0000003,
+      completion_token: 0.0000025,
+      prompt_cache_read_token: 0.000000075,
+    }
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-2.5-flash-image",
+    },
+    cost: {
+      prompt_token: 0.0000003,
+      completion_token: 0.0000025,
+      prompt_cache_read_token: 0.000000075,
+    }
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gemini-2.5-pro",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.00000031,
+    }
+  },
+  {
+    model: {
       operator: "includes",
       value: "claude-3-opus",
     },
@@ -164,6 +208,59 @@ export const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.00000015,
       completion_token: 0.0000006,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-2.5-flash-lite-preview-06-17",
+    },
+    cost: {
+      prompt_token: 0.0000001,
+      completion_token: 0.0000004,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-2.5-flash-lite",
+    },
+    cost: {
+      prompt_token: 0.0000001,
+      completion_token: 0.0000004,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-3-pro-preview",
+    },
+    cost: {
+      prompt_token: 0.000002,
+      completion_token: 0.000012,
+      prompt_cache_read_token: 0.0000002,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-3-flash-preview",
+    },
+    cost: {
+      prompt_token: 0.0000005,
+      completion_token: 0.000003,
+      prompt_cache_read_token: 0.00000005,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gemini-3.1-pro-preview",
+    },
+    cost: {
+      prompt_token: 0.000002, // $2/1M tokens
+      completion_token: 0.000012, // $12/1M tokens (including thinking)
+      prompt_cache_read_token: 0.0000002, // $0.20/1M = 10% of input
     },
   },
 ];
@@ -452,6 +549,54 @@ export const modelDetails: ModelDetailsMap = {
         "Complex reasoning tasks",
         "Code generation and editing",
         "Multimodal applications",
+      ],
+    },
+  },
+  "gemini-2.5-flash-lite": {
+    matches: ["gemini-2.5-flash-lite", "gemini-2.5-flash-lite-001"],
+    searchTerms: ["gemini 2.5 flash lite", "gemini 2.5 lite", "google 2.5 lite"],
+    info: {
+      maxTokens: 1000000,
+      releaseDate: "2025-01-14",
+      description:
+        "Google's most cost-effective model in the 2.5 series, designed for high-volume applications requiring excellent performance at the lowest cost. Features enhanced speed and efficiency while maintaining strong capabilities.",
+      tradeOffs: [
+        "Lowest cost in the 2.5 series at $0.10/1M input tokens",
+        "Optimized for speed and efficiency",
+        "Best price-performance ratio for routine tasks",
+      ],
+      benchmarks: {
+        mmlu: 0.812,
+        hellaswag: 0.892,
+        gsm8k: 0.863,
+      },
+      capabilities: [
+        "Efficient content generation",
+        "Code understanding and generation",
+        "Long context processing (1M tokens)",
+        "Fast response times",
+        "High-throughput processing",
+        "Multimodal understanding",
+      ],
+      strengths: [
+        "Most cost-effective model in 2.5 series",
+        "Fastest response times in the series",
+        "Excellent for high-volume production use",
+        "Strong performance on routine tasks",
+        "Maintains long context capabilities",
+      ],
+      weaknesses: [
+        "Less sophisticated with highly complex reasoning",
+        "May require more explicit instructions for nuanced tasks",
+        "Lighter capabilities compared to 2.5 Pro",
+      ],
+      recommendations: [
+        "High-volume production applications",
+        "Cost-sensitive deployments",
+        "Customer service and support systems",
+        "Content generation at scale",
+        "Real-time applications requiring fast responses",
+        "General-purpose assistants",
       ],
     },
   },

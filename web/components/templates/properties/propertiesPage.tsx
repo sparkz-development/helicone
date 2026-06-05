@@ -1,30 +1,191 @@
-import AuthHeader from "@/components/shared/authHeader";
 import { FreeTierLimitBanner } from "@/components/shared/FreeTierLimitBanner";
-import { FreeTierLimitWrapper } from "@/components/shared/FreeTierLimitWrapper";
 import { EmptyStateCard } from "@/components/shared/helicone/EmptyStateCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { H3 } from "@/components/ui/typography";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useFeatureLimit } from "@/hooks/useFreeTierLimit";
-import { LockIcon, Tag } from "lucide-react";
+import { ClientType, getJawnClient } from "@/lib/clients/jawn";
+import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/router";
-import { useEffect, useMemo } from "react";
-import { useGetPropertiesV2 } from "../../../services/hooks/propertiesV2";
+import { useEffect, useMemo, useState } from "react";
 import { getPropertyFiltersV2 } from "@helicone-package/filters/frontendFilterDefs";
+import { useGetPropertiesV2 } from "../../../services/hooks/propertiesV2";
 import PropertyPanel from "./propertyPanel";
+
+type HiddenProperty = { property: string };
 
 const PropertiesPage = (props: { initialPropertyKey?: string }) => {
   const { initialPropertyKey } = props;
-  const { properties, isLoading: isPropertiesLoading } =
-    useGetPropertiesV2(getPropertyFiltersV2);
+  const {
+    properties,
+    isLoading: isPropertiesLoading,
+    refetch,
+  } = useGetPropertiesV2(getPropertyFiltersV2);
 
   const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [hiddenKeysLocal, setHiddenKeysLocal] = useState<Set<string>>(
+    new Set(),
+  );
+  const [hidingKey, setHidingKey] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [selectedHiddenProperty, setSelectedHiddenProperty] =
+    useState<string>("");
+  const [restoringKey, setRestoringKey] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  const {
+    data: hiddenProperties,
+    isLoading: isHiddenPropertiesLoading,
+    isRefetching: isHiddenPropertiesRefetching,
+    error: hiddenPropertiesError,
+    refetch: refetchHiddenProperties,
+  } = useQuery<HiddenProperty[], Error>({
+    queryKey: ["properties", "hidden"],
+    queryFn: async () => {
+      const jawn = getJawnClient();
+      const res = await (jawn as ClientType).POST(
+        "/v1/property/hidden/query",
+        {},
+      );
+      if (!res.data || res.data.error !== null) {
+        throw new Error(
+          res.data?.error ?? "Failed to load deleted properties.",
+        );
+      }
+      return res.data.data ?? [];
+    },
+    enabled: restoreModalOpen,
+    refetchOnWindowFocus: false,
+  });
+
+  const hiddenPropertyKeys = useMemo(
+    () => hiddenProperties?.map((p) => p.property) ?? [],
+    [hiddenProperties],
+  );
+
+  const hiddenPropertiesErrorMessage = hiddenPropertiesError?.message ?? null;
+
+  const effectiveSelectedHiddenProperty = selectedHiddenProperty || "";
+
+  const isRestoreDisabled =
+    !effectiveSelectedHiddenProperty ||
+    !!restoringKey ||
+    hiddenPropertyKeys.length === 0;
+
+  useEffect(() => {
+    if (!restoreModalOpen) {
+      setSelectedHiddenProperty("");
+      setRestoreError(null);
+    }
+  }, [restoreModalOpen]);
+
+  const isHiddenPropertiesLoadingState =
+    isHiddenPropertiesLoading || isHiddenPropertiesRefetching;
+
+  // Filter properties based on search query
+  const filteredProperties = useMemo(() => {
+    const base = properties.filter((p) => !hiddenKeysLocal.has(p));
+    if (!searchQuery) return base;
+    return base.filter((property) =>
+      property.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [properties, searchQuery, hiddenKeysLocal]);
 
   // Only update URL when property is selected via UI
   const handlePropertySelect = (property: string) => {
     router.push(`/properties/${encodeURIComponent(property)}`);
+  };
+
+  const handleHideProperty = async (property: string) => {
+    try {
+      setHidingKey(property);
+      const jawn = getJawnClient();
+      await (jawn as ClientType).POST("/v1/property/hide", {
+        body: { key: property },
+      });
+      setHiddenKeysLocal((prev) => {
+        const updated = new Set(prev);
+        updated.add(property);
+        return updated;
+      });
+      refetch();
+      if (restoreModalOpen) {
+        void refetchHiddenProperties();
+      }
+      if (initialPropertyKey === property) {
+        router.replace("/properties");
+      }
+    } catch (e) {
+      // no-op; could add toast later
+    } finally {
+      setHidingKey(null);
+    }
+  };
+
+  const handleOpenRestoreModal = () => {
+    if (restoringKey) {
+      return;
+    }
+    setRestoreModalOpen(true);
+    setRestoreError(null);
+  };
+
+  const handleRestoreProperty = async () => {
+    const propertyToRestore = effectiveSelectedHiddenProperty;
+    if (!propertyToRestore) {
+      return;
+    }
+
+    try {
+      setRestoreError(null);
+      setRestoringKey(propertyToRestore);
+      const jawn = getJawnClient();
+      await (jawn as ClientType).POST("/v1/property/restore", {
+        body: { key: propertyToRestore },
+      });
+      setHiddenKeysLocal((prev) => {
+        const updated = new Set(prev);
+        updated.delete(propertyToRestore);
+        return updated;
+      });
+      await Promise.all([refetch(), refetchHiddenProperties()]);
+      setRestoreModalOpen(false);
+      setSelectedHiddenProperty("");
+    } catch (e) {
+      setRestoreError("Unable to restore property. Please try again.");
+    } finally {
+      setRestoringKey(null);
+    }
+  };
+
+  const handleRestoreModalOpenChange = (open: boolean) => {
+    if (restoringKey) {
+      return;
+    }
+    setRestoreModalOpen(open);
+    if (!open) {
+      setRestoreError(null);
+    }
   };
 
   // Determine the selected property based on initialPropertyKey or first property
@@ -32,15 +193,15 @@ const PropertiesPage = (props: { initialPropertyKey?: string }) => {
     if (initialPropertyKey && properties.includes(initialPropertyKey)) {
       return initialPropertyKey;
     }
-    if (properties.length > 0 && !isPropertiesLoading) {
-      return properties[0];
+    if (filteredProperties.length > 0 && !isPropertiesLoading) {
+      return filteredProperties[0];
     }
     return "";
-  }, [initialPropertyKey, properties, isPropertiesLoading]);
+  }, [initialPropertyKey, properties, filteredProperties, isPropertiesLoading]);
 
   const { hasAccess, freeLimit, canCreate } = useFeatureLimit(
     "properties",
-    properties.length
+    properties.length,
   );
 
   // Redirect to root if property not found
@@ -57,38 +218,15 @@ const PropertiesPage = (props: { initialPropertyKey?: string }) => {
 
   if (isPropertiesLoading) {
     return (
-      <div className="flex flex-col h-full min-h-screen bg-background dark:bg-sidebar-background">
-        <AuthHeader title="Properties" />
-
-        <div className="flex flex-col lg:flex-row flex-1 h-full bg-background dark:bg-sidebar-background">
-          <Card className="w-full lg:w-[350px] lg:min-w-[350px] lg:max-w-[350px] lg:flex-shrink-0 h-full rounded-none border-0 shadow-none bg-background dark:bg-sidebar-background">
-            <CardContent className="p-0">
-              <div className="bg-background dark:bg-sidebar-background border-b border-border dark:border-sidebar-border">
-                <CardHeader className="py-3 px-4">
-                  <H3>Your Properties</H3>
-                </CardHeader>
+      <div className="flex h-screen flex-col bg-background">
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex flex-1 flex-col border-t border-border bg-background">
+            <div className="flex flex-1 items-center justify-center overflow-y-auto p-8">
+              <div className="text-center">
+                <Skeleton className="mx-auto mb-4 h-8 w-48 bg-muted" />
+                <Skeleton className="mx-auto h-4 w-64 bg-muted" />
               </div>
-
-              <ScrollArea className="h-full">
-                <div className="p-4 space-y-3">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="flex items-center">
-                      <Skeleton className="h-4 w-4 mr-2 bg-slate-200 dark:bg-slate-700" />
-                      <Skeleton className="h-6 w-full bg-slate-200 dark:bg-slate-700" />
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          <div className="w-full flex flex-col pt-2">
-            <Card className="rounded-none border-0 shadow-none">
-              <CardContent className="flex flex-col items-center justify-center py-16">
-                <Skeleton className="h-8 w-48 mb-6 bg-slate-200 dark:bg-slate-700" />
-                <Skeleton className="h-4 w-64 bg-slate-200 dark:bg-slate-700" />
-              </CardContent>
-            </Card>
+            </div>
           </div>
         </div>
       </div>
@@ -97,8 +235,8 @@ const PropertiesPage = (props: { initialPropertyKey?: string }) => {
 
   if (properties.length === 0) {
     return (
-      <div className="flex flex-col w-full h-screen bg-background dark:bg-sidebar-background">
-        <div className="flex flex-1 h-full">
+      <div className="flex h-screen w-full flex-col bg-background">
+        <div className="flex flex-1 items-center justify-center">
           <EmptyStateCard feature="properties" />
         </div>
       </div>
@@ -106,9 +244,7 @@ const PropertiesPage = (props: { initialPropertyKey?: string }) => {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-screen bg-background dark:bg-sidebar-background">
-      <AuthHeader title="Properties" />
-
+    <div className="flex h-screen flex-col bg-background">
       {!canCreate && (
         <FreeTierLimitBanner
           feature="properties"
@@ -118,59 +254,212 @@ const PropertiesPage = (props: { initialPropertyKey?: string }) => {
         />
       )}
 
-      <div className="flex flex-col lg:flex-row h-full bg-background dark:bg-sidebar-background">
-        <Card className="w-full lg:w-[300px] lg:min-w-[300px] lg:max-w-[300px] lg:flex-shrink-0 h-full rounded-none border-0 border-r border-border dark:border-sidebar-border shadow-none bg-background dark:bg-sidebar-background">
-          <CardContent>
-            <ScrollArea className="h-full dark:bg-sidebar-background bg-background">
-              {properties.map((property, i) => {
-                const requiresPremium = !hasAccess && i >= freeLimit;
-
-                return (
-                  <div key={i}>
-                    {requiresPremium ? (
-                      <FreeTierLimitWrapper
-                        feature="properties"
-                        itemCount={properties.length}
-                      >
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start font-medium h-auto py-3 rounded-none text-muted-foreground dark:text-sidebar-foreground hover:text-foreground dark:hover:text-sidebar-foreground"
-                        >
-                          <LockIcon className="h-3 w-3 mr-2 text-muted-foreground dark:text-sidebar-foreground" />
-                          <span className="truncate max-w-[250px]">
-                            {property}
-                          </span>
-                        </Button>
-                      </FreeTierLimitWrapper>
-                    ) : (
-                      <Button
-                        variant={
-                          selectedProperty === property ? "default" : "ghost"
-                        }
-                        className="w-full justify-start font-medium h-auto py-3 rounded-none"
-                        onClick={() => handlePropertySelect(property)}
-                      >
-                        <Tag className="h-4 w-4 mr-2" />
-                        <span className="truncate max-w-[250px]">
-                          {property}
-                        </span>
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        <div className="pt-2 w-full h-full flex-1 overflow-auto bg-background dark:bg-sidebar-background">
-          <div className="min-w-0 h-full">
-            <PropertyPanel property={selectedProperty} />
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col border-t border-border bg-background">
+          <div className="flex-1 overflow-y-auto">
+            <PropertyPanel
+              property={selectedProperty}
+              properties={filteredProperties}
+              allProperties={properties}
+              onPropertySelect={handlePropertySelect}
+              onDeleteProperty={(property) => {
+                setPendingDelete(property);
+                setConfirmOpen(true);
+              }}
+              onRestoreProperties={handleOpenRestoreModal}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              hasAccess={hasAccess}
+              freeLimit={freeLimit}
+              hidingKey={hidingKey}
+            />
           </div>
         </div>
       </div>
+
+      <HidePropertyConfirmDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          setConfirmOpen(open);
+          if (!open) setPendingDelete(null);
+        }}
+        property={pendingDelete}
+        isLoading={hidingKey === pendingDelete && hidingKey !== null}
+        onConfirm={async () => {
+          if (!pendingDelete) return;
+          await handleHideProperty(pendingDelete);
+          setConfirmOpen(false);
+          setPendingDelete(null);
+        }}
+      />
+
+      <RestoreHiddenPropertiesDialog
+        open={restoreModalOpen}
+        onOpenChange={handleRestoreModalOpenChange}
+        hiddenPropertyKeys={hiddenPropertyKeys}
+        isLoading={isHiddenPropertiesLoadingState}
+        errorMessage={hiddenPropertiesErrorMessage}
+        selectedProperty={effectiveSelectedHiddenProperty}
+        onSelect={setSelectedHiddenProperty}
+        onRestore={handleRestoreProperty}
+        isRestoreDisabled={isRestoreDisabled}
+        restoreError={restoreError}
+        restoringKey={restoringKey}
+      />
     </div>
   );
 };
 
 export default PropertiesPage;
+
+// Confirmation dialog for hiding a property
+const HidePropertyConfirmDialog = ({
+  open,
+  onOpenChange,
+  property,
+  onConfirm,
+  isLoading,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  property: string | null;
+  onConfirm: () => void;
+  isLoading: boolean;
+}) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader className="space-y-4">
+          <DialogTitle>Delete property?</DialogTitle>
+          <DialogDescription>
+            {property
+              ? `This will delete the property "${property}" from your Properties list.`
+              : "This will delete the selected property from your Properties list."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={onConfirm}
+            disabled={isLoading || !property}
+          >
+            {isLoading ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+type RestoreHiddenPropertiesDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  hiddenPropertyKeys: string[];
+  isLoading: boolean;
+  errorMessage: string | null;
+  selectedProperty: string;
+  onSelect: (value: string) => void;
+  onRestore: () => void;
+  isRestoreDisabled: boolean;
+  restoreError: string | null;
+  restoringKey: string | null;
+};
+
+const RestoreHiddenPropertiesDialog = ({
+  open,
+  onOpenChange,
+  hiddenPropertyKeys,
+  isLoading,
+  errorMessage,
+  selectedProperty,
+  onSelect,
+  onRestore,
+  isRestoreDisabled,
+  restoreError,
+  restoringKey,
+}: RestoreHiddenPropertiesDialogProps) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Restore Deleted Properties</DialogTitle>
+          <DialogDescription>
+            Select a property to restore. Restored properties will reappear in
+            your list.
+          </DialogDescription>
+        </DialogHeader>
+
+        {errorMessage ? (
+          <p className="text-sm text-destructive">{errorMessage}</p>
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : hiddenPropertyKeys.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            You do not have any deleted properties to restore.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="restore-hidden-property">Deleted property</Label>
+              <Select
+                value={selectedProperty || undefined}
+                onValueChange={(value) => onSelect(value)}
+              >
+                <SelectTrigger id="restore-hidden-property">
+                  <SelectValue placeholder="Select a property" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hiddenPropertyKeys.map((property) => (
+                    <SelectItem key={property} value={property}>
+                      {property}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {restoreError && (
+              <p className="text-sm text-destructive">{restoreError}</p>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (!restoringKey) {
+                onOpenChange(false);
+              }
+            }}
+            disabled={!!restoringKey}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onRestore}
+            disabled={isRestoreDisabled}
+            variant="action"
+          >
+            {restoringKey ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Restoring
+              </>
+            ) : (
+              "Restore"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};

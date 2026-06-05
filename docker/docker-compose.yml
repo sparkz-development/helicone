@@ -4,7 +4,7 @@ services:
   # =============================================================================
   # INFRASTRUCTURE SERVICES (Default profile - always runs)
   # =============================================================================
-  
+
   db:
     image: postgres:17.4
     container_name: helicone-postgres-flyway-test
@@ -38,7 +38,11 @@ services:
       CLICKHOUSE_DEFAULT_USER: default
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,6 +76,8 @@ services:
       /bin/sh -c "
       /usr/bin/mc alias set localminio http://minio:9000 minioadmin minioadmin;
       /usr/bin/mc mb --ignore-existing localminio/request-response-storage;
+      /usr/bin/mc mb --ignore-existing localminio/prompt-body-storage;
+      /usr/bin/mc mb --ignore-existing localminio/hql-store;
       exit 0;
       "
 
@@ -81,6 +87,21 @@ services:
     ports:
       - "1025:1025" # SMTP port
       - "8025:8025" # Web UI port
+
+  redis:
+    image: redis:8.0.2-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=helicone-redis-pw
+      - REDIS_PORT=6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   migrations:
     build:
@@ -95,8 +116,7 @@ services:
       FLYWAY_URL: jdbc:postgresql://db:5432/helicone_test
       FLYWAY_USER: postgres
       FLYWAY_PASSWORD: testpassword
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_HOST: http://clickhouse:8123
       CLICKHOUSE_USER: default
     volumes:
       - ../supabase:/app/supabase
@@ -131,12 +151,15 @@ services:
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_BUCKET_NAME: "request-response-storage"
+      S3_PROMPT_BUCKET_NAME: "prompt-body-storage"
       S3_ENDPOINT_PUBLIC: http://localhost:9000
       CLICKHOUSE_CREDS: |
         {
           "CLICKHOUSE_HOST": "http://clickhouse:8123",
           "CLICKHOUSE_USER": "default",
-          "CLICKHOUSE_PASSWORD": ""
+          "CLICKHOUSE_PASSWORD": "",
+          "CLICKHOUSE_HQL_USER": "hql_user",
+          "CLICKHOUSE_HQL_PASSWORD": ""
         }
       VERCEL_ENV: ${VERCEL_ENV:-development}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-secret-key}
@@ -202,12 +225,15 @@ services:
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_BUCKET_NAME: "request-response-storage"
+      S3_PROMPT_BUCKET_NAME: "prompt-body-storage"
       S3_ENDPOINT_PUBLIC: http://localhost:9000
       CLICKHOUSE_CREDS: |
         {
           "CLICKHOUSE_HOST": "http://clickhouse:8123",
           "CLICKHOUSE_USER": "default",
-          "CLICKHOUSE_PASSWORD": ""
+          "CLICKHOUSE_PASSWORD": "",
+          "CLICKHOUSE_HQL_USER": "hql_user",
+          "CLICKHOUSE_HQL_PASSWORD": ""
         }
       VERCEL_ENV: ${VERCEL_ENV:-development}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-your-secret-key}
@@ -281,6 +307,7 @@ services:
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_BUCKET_NAME: request-response-storage
+      S3_PROMPT_BUCKET_NAME: prompt-body-storage
 
   worker-helicone-api:
     image: worker-local
@@ -436,3 +463,7 @@ volumes:
     driver: local
   clickhouse_data:
     driver: local
+
+networks:
+  traces:
+    driver: bridge

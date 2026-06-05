@@ -6,6 +6,7 @@ import {
   FilterNode,
   TablesAndViews,
 } from "./filterDefs";
+import { COST_PRECISION_MULTIPLIER } from "@helicone-package/cost/costCalc";
 
 export enum TagType {
   REQUEST = "request",
@@ -14,11 +15,11 @@ export enum TagType {
 
 type KeyMapper<T> = (
   filter: T,
-  placeValueSafely: (val: string) => string
+  placeValueSafely: (val: string | number) => string | number
 ) => {
   column?: string;
   operator: AllOperators;
-  value: string;
+  value: string | number;
 };
 
 type KeyMappings = {
@@ -59,7 +60,7 @@ function easyKeyMappings<T extends keyof TablesAndViews>(
       }
     }
 
-    if (value === "null") {
+    if (value === "null" || value === "__empty__") {
       return {
         column: columnToUse,
         operator: operator,
@@ -182,6 +183,20 @@ const whereKeyMappings: KeyMappings = {
     threat: "request_response_log.threat",
   }),
   request_response_rmt: (filter, placeValueSafely) => {
+    if ("property_key" in filter && filter.property_key) {
+      const { operator, value } = extractOperatorAndValueFromAnOperator(
+        filter.property_key
+      );
+      if (operator !== "equals") {
+        throw new Error("property_key filter only supports 'equals' operator");
+      }
+      return {
+        column: `request_response_rmt.properties`,
+        operator: "has",
+        value: placeValueSafely(value),
+      };
+    }
+
     if ("properties" in filter && filter.properties) {
       const key = Object.keys(filter.properties)[0];
       const { operator, value } = extractOperatorAndValueFromAnOperator(
@@ -217,8 +232,39 @@ const whereKeyMappings: KeyMappings = {
         value: `${placeValueSafely(value)}`,
       };
     }
+    if ("cached" in filter && filter.cached) {
+      const { operator, value } = extractOperatorAndValueFromAnOperator(
+        filter.cached
+      );
+      if (operator !== "equals") {
+        throw new Error("Cached filter only supports 'equals' operator");
+      }
+      // If cached = true, we want cache_reference_id != DEFAULT_UUID
+      // If cached = false, we want cache_reference_id = DEFAULT_UUID
+      const cacheOperator = value === true ? "not-equals" : "equals";
+      return {
+        column: "request_response_rmt.cache_reference_id",
+        operator: cacheOperator as AllOperators,
+        value: placeValueSafely("00000000-0000-0000-0000-000000000000"),
+      };
+    }
+    if ("cost" in filter && filter.cost) {
+      const { operator, value } = extractOperatorAndValueFromAnOperator(
+        filter.cost
+      );
+      return {
+        column: "request_response_rmt.cost",
+        operator: operator,
+        value: placeValueSafely(
+          Math.floor((value as number) * COST_PRECISION_MULTIPLIER)
+        ),
+      };
+    }
     return easyKeyMappings<"request_response_rmt">({
+      country_code: "request_response_rmt.country_code",
       latency: "request_response_rmt.latency",
+      cost: "request_response_rmt.cost",
+      provider: "request_response_rmt.provider",
       time_to_first_token: "request_response_rmt.time_to_first_token",
       status: "request_response_rmt.status",
       request_created_at: "request_response_rmt.request_created_at",
@@ -234,19 +280,24 @@ const whereKeyMappings: KeyMappings = {
       prompt_tokens: "request_response_rmt.prompt_tokens",
       completion_tokens: "request_response_rmt.completion_tokens",
       request_body: "request_response_rmt.request_body",
+      "helicone-score-feedback":
+        "request_response_rmt.scores['helicone-score-feedback']",
       response_body: "request_response_rmt.response_body",
       scores_column: "request_response_rmt.scores",
       cache_enabled: "request_response_rmt.cache_enabled",
       cache_reference_id: "request_response_rmt.cache_reference_id",
       assets: "request_response_rmt.asset_ids",
       prompt_cache_read_tokens: "request_response_rmt.prompt_cache_read_tokens",
-      prompt_cache_write_tokens: "request_response_rmt.prompt_cache_write_tokens",
+      prompt_cache_write_tokens:
+        "request_response_rmt.prompt_cache_write_tokens",
+      prompt_id: "request_response_rmt.prompt_id",
+      prompt_version: "request_response_rmt.prompt_version",
+      request_referrer: "request_response_rmt.request_referrer",
+      is_passthrough_billing: "request_response_rmt.is_passthrough_billing",
+      target_url: "request_response_rmt.target_url",
     })(filter, placeValueSafely);
   },
-  users_view: easyKeyMappings<"request_response_log">({
-    status: "r.status",
-    user_id: "r.user_id",
-  }),
+  users_view: easyKeyMappings<"users_view">({}),
   properties_v3: easyKeyMappings<"properties_v3">({
     key: "properties_v3.key",
     value: "properties_v3.value",
@@ -282,21 +333,28 @@ const whereKeyMappings: KeyMappings = {
     saved_latency_ms: "cache_metrics.saved_latency_ms",
     saved_completion_tokens: "cache_metrics.saved_completion_tokens",
     saved_prompt_tokens: "cache_metrics.saved_prompt_tokens",
-    saved_completion_audio_tokens: "cache_metrics.saved_completion_audio_tokens",
+    saved_completion_audio_tokens:
+      "cache_metrics.saved_completion_audio_tokens",
     saved_prompt_audio_tokens: "cache_metrics.saved_prompt_audio_tokens",
-    saved_prompt_cache_write_tokens: "cache_metrics.saved_prompt_cache_write_tokens",
-    saved_prompt_cache_read_tokens: "cache_metrics.saved_prompt_cache_read_tokens",
+    saved_prompt_cache_write_tokens:
+      "cache_metrics.saved_prompt_cache_write_tokens",
+    saved_prompt_cache_read_tokens:
+      "cache_metrics.saved_prompt_cache_read_tokens",
     first_hit: "cache_metrics.first_hit",
     last_hit: "cache_metrics.last_hit",
     request_body: "cache_metrics.request_body",
     response_body: "cache_metrics.response_body",
+  }),
+  organization_properties: easyKeyMappings<"organization_properties">({
+    organization_id: "organization_properties.organization_id",
+    property_key: "organization_properties.property_key",
   }),
 
   values: NOT_IMPLEMENTED,
   job: NOT_IMPLEMENTED,
   job_node: NOT_IMPLEMENTED,
   user_metrics: easyKeyMappings<"user_metrics">({}),
-}
+};
 
 const havingKeyMappings: KeyMappings = {
   user_metrics: easyKeyMappings<"user_metrics">({
@@ -310,15 +368,16 @@ const havingKeyMappings: KeyMappings = {
     cost: "cost",
   }),
   users_view: easyKeyMappings<"users_view">({
-    active_for: "active_for",
-    first_active: "first_active",
-    last_active: "last_active",
-    total_requests: "total_requests",
-    average_requests_per_day_active: "average_requests_per_day_active",
-    average_tokens_per_request: "average_tokens_per_request",
-    total_completion_tokens: "total_completion_tokens",
-    total_prompt_token: "total_prompt_token",
-    cost: "cost",
+    user_user_id: "user_id",
+    user_active_for: "active_for",
+    user_first_active: "first_active",
+    user_last_active: "last_active",
+    user_total_requests: "total_requests",
+    user_average_requests_per_day_active: "average_requests_per_day_active",
+    user_average_tokens_per_request: "average_tokens_per_request",
+    user_total_completion_tokens: "total_completion_tokens",
+    user_total_prompt_tokens: "total_prompt_tokens",
+    user_cost: "cost",
   }),
   sessions_request_response_rmt:
     easyKeyMappings<"sessions_request_response_rmt">({
@@ -342,10 +401,13 @@ const havingKeyMappings: KeyMappings = {
     saved_latency_ms: "cache_metrics.saved_latency_ms",
     saved_completion_tokens: "cache_metrics.saved_completion_tokens",
     saved_prompt_tokens: "cache_metrics.saved_prompt_tokens",
-    saved_completion_audio_tokens: "cache_metrics.saved_completion_audio_tokens",
+    saved_completion_audio_tokens:
+      "cache_metrics.saved_completion_audio_tokens",
     saved_prompt_audio_tokens: "cache_metrics.saved_prompt_audio_tokens",
-    saved_prompt_cache_write_tokens: "cache_metrics.saved_prompt_cache_write_tokens",
-    saved_prompt_cache_read_tokens: "cache_metrics.saved_prompt_cache_read_tokens",
+    saved_prompt_cache_write_tokens:
+      "cache_metrics.saved_prompt_cache_write_tokens",
+    saved_prompt_cache_read_tokens:
+      "cache_metrics.saved_prompt_cache_read_tokens",
     first_hit: "cache_metrics.first_hit",
     last_hit: "cache_metrics.last_hit",
     request_body: "cache_metrics.request_body",
@@ -363,6 +425,7 @@ const havingKeyMappings: KeyMappings = {
   property_with_response_v1: NOT_IMPLEMENTED,
   feedback: NOT_IMPLEMENTED,
   rate_limit_log: NOT_IMPLEMENTED,
+  organization_properties: NOT_IMPLEMENTED,
   prompt_v2: NOT_IMPLEMENTED,
   prompts_versions: NOT_IMPLEMENTED,
   experiment: NOT_IMPLEMENTED,
@@ -370,7 +433,7 @@ const havingKeyMappings: KeyMappings = {
   values: NOT_IMPLEMENTED,
   job: NOT_IMPLEMENTED,
   job_node: NOT_IMPLEMENTED,
-}
+};
 
 function operatorToSql(operator: AllOperators): string {
   switch (operator) {
@@ -398,6 +461,8 @@ function operatorToSql(operator: AllOperators): string {
       return "@>";
     case "vector-contains":
       return "@@";
+    case "has":
+      return "HAS";
   }
 }
 
@@ -410,7 +475,7 @@ export function buildFilterLeaf(
   filters: string[];
   argsAcc: any[];
 } {
-  const placeValueSafely = (value: string) => {
+  const placeValueSafely = (value: string | number) => {
     argsAcc.push(value);
     return argPlaceHolder(argsAcc.length - 1, value);
   };
@@ -450,6 +515,8 @@ export function buildFilterLeaf(
 
     const filterClause = (() => {
       switch (true) {
+        case operatorKey === "has":
+          return `has(${column}, ${value})`;
         case operatorKey === "not-equals" && value === "null":
           return `${column} is not null`;
         case operatorKey === "equals" && value === "null":
@@ -458,6 +525,8 @@ export function buildFilterLeaf(
           return `${column} ${sqlOperator} '%' || ${value}::text || '%'`;
         case operatorKey === "vector-contains":
           return `${column} ${sqlOperator} plainto_tsquery('helicone_search_config', ${value}::text)`;
+        case operatorKey === "equals" && value === "__empty__": // having __ wrap it in case someone searches for "empty"
+          return `empty(${column})`;
         default:
           return `${column} ${sqlOperator} ${value}`;
       }
@@ -647,12 +716,23 @@ export async function buildFilterWithAuthClickHouseCacheMetrics(
   }));
 }
 
-
 export async function buildFilterWithAuthClickHouseRateLimits(
   args: ExternalBuildFilterArgs & { org_id: string }
 ): Promise<{ filter: string; argsAcc: any[] }> {
   return buildFilterWithAuth(args, "clickhouse", (orgId) => ({
     rate_limit_log: {
+      organization_id: {
+        equals: orgId,
+      },
+    },
+  }));
+}
+
+export async function buildFilterWithAuthClickHouseOrganizationProperties(
+  args: ExternalBuildFilterArgs & { org_id: string }
+): Promise<{ filter: string; argsAcc: any[] }> {
+  return buildFilterWithAuth(args, "clickhouse", (orgId) => ({
+    organization_properties: {
       organization_id: {
         equals: orgId,
       },

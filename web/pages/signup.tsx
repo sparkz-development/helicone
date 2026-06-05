@@ -1,41 +1,11 @@
-import { InboxArrowDownIcon } from "@heroicons/react/24/outline";
-import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
-import useNotification from "../components/shared/notification/useNotification";
-import ThemedModal from "../components/shared/themed/themedModal";
-import AuthForm from "../components/templates/auth/authForm";
-import { DEMO_EMAIL } from "../lib/constants";
 import PublicMetaData from "../components/layout/public/publicMetaData";
 import { GetServerSidePropsContext } from "next";
-import { InfoBanner } from "../components/shared/themed/themedDemoBanner";
 import { env } from "next-runtime-env";
-import { useHeliconeAuthClient } from "@/packages/common/auth/client/AuthClientFactory";
+import Link from "next/link";
+import Image from "next/image";
+import { AuthBrandingPanel } from "../components/templates/auth/AuthBrandingPanel";
 
 const SignUp = () => {
-  const heliconeAuthClient = useHeliconeAuthClient();
-  const { setNotification } = useNotification();
-  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
-  const router = useRouter();
-  const { demo = "false" } = router.query;
-
-  useEffect(() => {
-    const { demo } = router.query;
-    if (demo === "true") {
-      localStorage.setItem("openDemo", "true");
-    }
-  }, [router.query]);
-
-  useEffect(() => {
-    if (
-      heliconeAuthClient.user &&
-      heliconeAuthClient.user.id &&
-      heliconeAuthClient.user.email &&
-      heliconeAuthClient.user.email !== DEMO_EMAIL
-    ) {
-      router.push(`/welcome`);
-    }
-  }, [heliconeAuthClient.user, router]);
-
   return (
     <PublicMetaData
       description={
@@ -43,82 +13,40 @@ const SignUp = () => {
       }
       ogImageUrl={"https://www.helicone.ai/static/helicone-og.webp"}
     >
-      {demo === "true" && <InfoBanner />}
+      <div className="flex h-screen w-full">
+        <AuthBrandingPanel />
 
-      <AuthForm
-        handleEmailSubmit={async (email: string, password: string) => {
-          const origin = window.location.origin;
-          console.log("signing up");
+        <div className="flex w-full flex-col items-center justify-center bg-white p-6 md:w-1/2 md:p-12">
+          <div className="w-full max-w-md">
+            <div className="mb-8 flex justify-center md:hidden">
+              <Link href="https://www.helicone.ai/" className="flex">
+                <Image
+                  src={"/static/logo.svg"}
+                  alt="Helicone"
+                  height={80}
+                  width={80}
+                  priority={true}
+                />
+              </Link>
+            </div>
 
-          const { data, error } = await heliconeAuthClient.signUp({
-            email: email,
-            password: password,
-            options: {
-              emailRedirectTo: `${origin}/onboarding`,
-            },
-          });
-
-          if (error) {
-            setNotification(
-              "Error creating your account. Please try again.",
-              "error"
-            );
-            console.error(error);
-            return;
-          }
-
-          setShowEmailConfirmation(true);
-        }}
-        handleGoogleSubmit={async () => {
-          const { error } = await heliconeAuthClient.signInWithOAuth({
-            provider: "google",
-            options: {
-              redirectTo: `${origin}/onboarding`,
-            },
-          });
-          if (error) {
-            setNotification(
-              "Error creating your account. Please try again.",
-              "error"
-            );
-            console.error(error);
-            return;
-          }
-        }}
-        handleGithubSubmit={async () => {
-          const { error } = await heliconeAuthClient.signInWithOAuth({
-            provider: "github",
-            options: {
-              redirectTo: `${origin}/onboarding`,
-            },
-          });
-          if (error) {
-            setNotification(
-              "Error creating your account. Please try again.",
-              "error"
-            );
-            console.error(error);
-            return;
-          }
-        }}
-        authFormType={"signup"}
-      />
-      <ThemedModal
-        open={showEmailConfirmation}
-        setOpen={setShowEmailConfirmation}
-      >
-        <div className="flex flex-col space-y-4 w-full min-w-[300px] justify-center text-center items-center p-2">
-          <h1 className="text-2xl font-semibold text-gray-900">
-            Confirm your email
-          </h1>
-          <p className="mt-2 text-sm text-gray-500">
-            Please check your email for a confirmation link.
-          </p>
-          <div className="pt-4">
-            <InboxArrowDownIcon className="h-16 w-16 text-gray-700" />
+            <div className="flex flex-col items-center text-center gap-4">
+              <h2 className="text-2xl font-semibold text-gray-900">
+                Sign ups are disabled
+              </h2>
+              <p className="text-sm text-gray-600">
+                Already have an account?{" "}
+                <Link
+                  href={"/signin"}
+                  className="text-sky-500 hover:text-sky-700"
+                >
+                  Sign in here.
+                </Link>
+              </p>
+            </div>
           </div>
         </div>
-      </ThemedModal>
+      </div>
     </PublicMetaData>
   );
 };
@@ -126,7 +54,7 @@ const SignUp = () => {
 export default SignUp;
 
 export const getServerSideProps = async (
-  context: GetServerSidePropsContext
+  context: GetServerSidePropsContext,
 ) => {
   if (env("NEXT_PUBLIC_IS_ON_PREM") === "true") {
     return {
@@ -154,10 +82,15 @@ export const getServerSideProps = async (
     };
   }
 
-  // default to the https://us.helicone.ai/signin if no other conditions are met
+  // default to the configured app URL signin if no other conditions are met
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.NODE_ENV === "development"
+      ? "http://localhost:3000"
+      : "https://us.helicone.ai");
   return {
     redirect: {
-      destination: "https://us.helicone.ai/signin",
+      destination: `${appUrl}/signin`,
       permanent: true,
     },
   };

@@ -8,7 +8,7 @@ export const truncateID = (invoiceId: string): string => {
 
 export function getStripeLink(
   invoiceId: string,
-  subscriptionId?: string
+  subscriptionId?: string,
 ): string {
   if (
     subscriptionId &&
@@ -21,13 +21,15 @@ export function getStripeLink(
 // Format currency values
 export const formatCurrency = (
   amount: number | null | undefined,
-  currency = "usd"
+  currency = "usd",
+  maximumFractionDigits: number | undefined = undefined,
 ): string => {
   if (amount === null || amount === undefined) return "$0.00";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currency.toUpperCase(),
     minimumFractionDigits: 2,
+    maximumFractionDigits: maximumFractionDigits, // Support small amounts like $0.0003049
   }).format(amount);
 };
 

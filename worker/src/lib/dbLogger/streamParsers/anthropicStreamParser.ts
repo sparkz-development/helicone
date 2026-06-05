@@ -8,7 +8,6 @@ export function recursivelyConsolidateAnthropic(body: any, delta: any): any {
       // console.log("Stop Reason", delta[key]);
     }
     if (key === "delta") {
-      console.log("Delta", delta[key]);
     } else if (key === "type") {
       body[key] = delta[key];
     } else if (body[key] === undefined || body[key] === null) {
@@ -26,12 +25,12 @@ export function recursivelyConsolidateAnthropic(body: any, delta: any): any {
   return body;
 }
 
-export function recursivelyConsolidateAnthropicListForClaude3(
+export function recursivelyConsolidateAnthropicListForClaude(
   delta: any[]
 ): any {
   return delta.reduce((acc, item) => {
     if (Array.isArray(item)) {
-      return recursivelyConsolidateAnthropicListForClaude3(item);
+      return recursivelyConsolidateAnthropicListForClaude(item);
     }
     if (typeof item !== "object") {
       return item;
@@ -41,7 +40,6 @@ export function recursivelyConsolidateAnthropicListForClaude3(
       return acc;
     }
     if (item.type === "message_delta") {
-      console.log("Message Delta", item);
       return recursivelyConsolidateAnthropic(acc, {
         ...item.delta,
         ...item,
@@ -54,6 +52,22 @@ export function recursivelyConsolidateAnthropicListForClaude3(
     }
 
     if (item.type === "content_block_start") {
+      // Store content block metadata for server_tool_use and tool_use blocks
+      if (
+        item.content_block?.type === "server_tool_use" ||
+        item.content_block?.type === "tool_use"
+      ) {
+        recursivelyConsolidateAnthropic(acc, {
+          content: [
+            {
+              type: item.content_block.type,
+              id: item.content_block.id,
+              name: item.content_block.name,
+              input: item.content_block.input || {},
+            },
+          ],
+        });
+      }
       return acc;
     }
 
@@ -62,21 +76,32 @@ export function recursivelyConsolidateAnthropicListForClaude3(
     }
 
     if (item.type === "content_block_delta") {
-      recursivelyConsolidateAnthropic(acc, {
-        content: [
-          {
-            type: "text",
-            text: item.delta.text,
-          },
-        ],
-      });
+      // Handle different types of content block deltas
+      if (item.delta?.text !== undefined) {
+        recursivelyConsolidateAnthropic(acc, {
+          content: [
+            {
+              type: "text",
+              text: item.delta.text,
+            },
+          ],
+        });
+      } else if (item.delta?.partial_json !== undefined) {
+        // Handle tool_use or server_tool_use input deltas
+        recursivelyConsolidateAnthropic(acc, {
+          content: [
+            {
+              type: item.content_block?.type || "tool_use",
+              input: item.delta.partial_json,
+            },
+          ],
+        });
+      }
     }
 
     if (item.type === "message_start") {
       return recursivelyConsolidateAnthropic(acc, item.message);
     }
-
-    // console.log("Item Without Ignore Keys", item);
 
     return recursivelyConsolidateAnthropic(acc, item);
   }, {});
@@ -91,9 +116,7 @@ export function getModel(requestBody: string): string {
 }
 
 export async function anthropicAIStream(
-  result: string,
-  tokenCounter: (text: string) => Promise<number>,
-  requestBody?: string
+  result: string
 ): Promise<Result<any, string>> {
   const lines = result
     .split("\n")
@@ -109,29 +132,9 @@ export async function anthropicAIStream(
     .filter((line) => line !== null);
 
   try {
-    if (getModel(requestBody ?? "{}").includes("claude-3")) {
-      return ok({
-        ...recursivelyConsolidateAnthropicListForClaude3(lines),
-      });
-    } else {
-      const claudeData = {
-        ...lines[lines.length - 1],
-        completion: lines.map((d) => d.completion).join(""),
-      };
-      const completionTokens = await tokenCounter(claudeData.completion);
-      const promptTokens = await tokenCounter(
-        JSON.parse(requestBody ?? "{}")?.prompt ?? ""
-      );
-      return ok({
-        ...consolidateTextFields(lines),
-        usage: {
-          total_tokens: completionTokens + promptTokens,
-          prompt_tokens: promptTokens,
-          completion_tokens: completionTokens,
-          helicone_calculated: true,
-        },
-      });
-    }
+    return ok({
+      ...recursivelyConsolidateAnthropicListForClaude(lines),
+    });
   } catch (e) {
     console.error("Error parsing response", e);
     return {

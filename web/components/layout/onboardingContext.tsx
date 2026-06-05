@@ -10,7 +10,7 @@ import {
   SparklesIcon,
   WorkflowIcon,
 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   createContext,
   useCallback,
@@ -20,7 +20,6 @@ import {
 } from "react";
 import { OnboardingPopoverAccordion } from "../templates/onboarding/OnboardingPopoverMore";
 import { DiffHighlight } from "../templates/welcome/diffHighlight";
-import { useOrg } from "./org/organizationContext";
 
 export const ONBOARDING_STEP_LABELS = [
   "REQUESTS_TABLE",
@@ -401,14 +400,14 @@ export type OnboardingContextType = {
 };
 
 const OnboardingContext = createContext<OnboardingContextType | undefined>(
-  undefined
+  undefined,
 );
 
 const useOnboardingContext = () => {
   const context = useContext(OnboardingContext);
   if (!context) {
     throw new Error(
-      "useOnboardingContext must be used within an OnboardingProvider"
+      "useOnboardingContext must be used within an OnboardingProvider",
     );
   }
   return context;
@@ -441,7 +440,7 @@ export const OnboardingProvider = ({
     const setReady = async () => {
       const countResponse = await $JAWN_API.POST("/v1/request/count/query", {
         body: {
-          filter: "all",
+          filter: {},
         },
       });
 
@@ -493,7 +492,7 @@ export const OnboardingProvider = ({
       let timeout: NodeJS.Timeout;
       const observer = new MutationObserver(() => {
         const element = document.querySelector(
-          `[data-onboarding-step="${currentStep}"]`
+          `[data-onboarding-step="${currentStep}"]`,
         );
         if (element) {
           const position = getElementPosition(element);
@@ -529,7 +528,7 @@ export const OnboardingProvider = ({
   const updatePointerPosition = () => {
     if (isOnboardingVisible) {
       const element = document.querySelector(
-        `[data-onboarding-step="${currentStep}"]`
+        `[data-onboarding-step="${currentStep}"]`,
       );
       if (element) {
         const position = getElementPosition(element);
@@ -549,9 +548,6 @@ export const OnboardingProvider = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep, isOnboardingVisible]);
-
-  const org = useOrg();
-  const pathname = usePathname();
 
   // useEffect(() => {
   //   if (

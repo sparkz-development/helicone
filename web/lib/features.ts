@@ -4,7 +4,6 @@ export const NON_FREE_FEATURES = [
   "sessions",
   "properties",
   "users",
-  "webhooks",
   "datasets",
   "alerts",
 ] as const;
@@ -42,7 +41,7 @@ export function isSubfeature(subfeature: string): subfeature is SubfeatureId {
 
 // Get subfeatures for a specific feature
 export function getSubfeaturesForFeature(
-  feature: FeatureId
+  feature: FeatureId,
 ): readonly string[] {
   return (SUBFEATURES as any)[feature] || [];
 }
@@ -57,7 +56,6 @@ export const FEATURE_DISPLAY_NAMES: Record<FeatureId, string> = {
   users: "Users",
   datasets: "Datasets",
   alerts: "Alerts",
-  webhooks: "Webhooks",
 };
 
 // Create lookup table for subfeature display names

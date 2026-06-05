@@ -105,12 +105,9 @@ const getRequestMessages = (contents: any[]): Message[] => {
           } else if (part.inlineData?.data) {
             // Assuming inlineData.data contains the base64 string
             return {
-              // NOTE: Setting _type to "file" now as it could be image, pdf, etc.
-              // The UI will use mime_type to determine specific rendering.
-              _type: "file",
+              _type: "image",
               role: content.role || "user", // Role applied at part level
-              content: part.inlineData.data, // Store base64 here
-              mime_type: part.inlineData?.mime_type, // Corrected field name to snake_case
+              image_url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`, // Format as data URL
             };
           }
           // Handle other potential part types like functionCall if needed later
@@ -128,10 +125,7 @@ const getRequestMessages = (contents: any[]): Message[] => {
         return {
           _type: "contentArray",
           role: content.role || "user",
-          contentArray: mappedParts.map((part: Message) => ({
-            ...part,
-            role: undefined, // Role is defined on the parent contentArray message
-          })),
+          contentArray: mappedParts, // Keep the role on individual parts
         };
       }
     })
@@ -156,7 +150,10 @@ export const mapGeminiPro: MapperFn<any, any> = ({
       ? response.modelVersion
       : model;
 
-  // Extract system instruction
+  // Extract system instruction and map to "role": "system" message
+  // Note: This mapping only works for requests coming through Helicone's proxy.
+  // For LiteLLM callback integration, system instructions may not be preserved
+  // as LiteLLM processes the request before sending it to Helicone.
   const systemInstructionText = request?.systemInstruction?.parts?.[0]?.text;
   const systemMessage: Message | null = systemInstructionText
     ? {
@@ -238,22 +235,84 @@ export const mapGeminiPro: MapperFn<any, any> = ({
 
   const firstContent = response[0]?.candidates?.[0]?.content;
 
-  const responseMessages: Message | undefined =
-    combinedContent || functionCall
-      ? {
-          role: firstContent?.role ?? "model",
-          content: combinedContent || undefined,
-          tool_calls: functionCall
-            ? [
-                {
-                  name: functionCall.name,
-                  arguments: JSON.parse(JSON.stringify(functionCall.args)),
-                },
-              ]
-            : undefined,
-          _type: functionCall ? "functionCall" : "message",
-        }
-      : undefined;
+  // Extract image parts from response
+  const imageParts: Message[] = [];
+  response.forEach((resp: any) => {
+    if (!resp || !Array.isArray(resp.candidates)) return;
+    resp.candidates.forEach((candidate: any) => {
+      if (!candidate) return;
+      const contents = Array.isArray(candidate.content)
+        ? candidate.content
+        : [candidate.content].filter(Boolean);
+      contents.forEach((content: any) => {
+        if (!content) return;
+        const parts = Array.isArray(content.parts)
+          ? content.parts
+          : [content.parts].filter(Boolean);
+        parts.forEach((part: any) => {
+          if (part?.inlineData?.data) {
+            const mimeType = part.inlineData.mimeType || "image/png";
+            imageParts.push({
+              _type: "image",
+              role: content.role || "model",
+              mime_type: mimeType,
+              image_url: `data:${mimeType};base64,${part.inlineData.data}`,
+            });
+          }
+        });
+      });
+    });
+  });
+
+  // Build response messages based on what we have
+  let responseMessages: Message | undefined;
+  if (functionCall) {
+    // Function call response
+    responseMessages = {
+      role: firstContent?.role ?? "model",
+      content: combinedContent || undefined,
+      tool_calls: [
+        {
+          name: functionCall.name,
+          arguments: JSON.parse(JSON.stringify(functionCall.args)),
+        },
+      ],
+      _type: "functionCall",
+    };
+  } else if (imageParts.length > 0 && combinedContent) {
+    // Mixed text + image response - use contentArray
+    const contentArray: Message[] = [
+      {
+        _type: "message",
+        role: firstContent?.role ?? "model",
+        content: combinedContent,
+      },
+      ...imageParts,
+    ];
+    responseMessages = {
+      _type: "contentArray",
+      role: firstContent?.role ?? "model",
+      contentArray,
+    };
+  } else if (imageParts.length > 0) {
+    // Image only response
+    if (imageParts.length === 1) {
+      responseMessages = imageParts[0];
+    } else {
+      responseMessages = {
+        _type: "contentArray",
+        role: firstContent?.role ?? "model",
+        contentArray: imageParts,
+      };
+    }
+  } else if (combinedContent) {
+    // Text only response
+    responseMessages = {
+      role: firstContent?.role ?? "model",
+      content: combinedContent,
+      _type: "message",
+    };
+  }
 
   const error = response.find((item: any) => item?.error)?.error;
 

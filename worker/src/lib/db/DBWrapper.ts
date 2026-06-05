@@ -1,5 +1,5 @@
 import { SupabaseClient, createClient } from "@supabase/supabase-js";
-import { Env, hash } from "../..";
+import { hash } from "../..";
 import { Database } from "../../../supabase/database.types";
 import { getProviderKeyFromProxyCache } from "../RequestWrapper";
 import { AuthParams } from "../dbLogger/DBLoggable";
@@ -22,7 +22,7 @@ export type RateLimitPolicy = {
   segment: string | undefined;
 };
 
-const RATE_LIMIT_CACHE_TTL = 120; // 2 minutes
+const RATE_LIMIT_CACHE_TTL = 43200; // 12 hours
 
 async function getHeliconeApiKeyRow(
   dbClient: SupabaseClient<Database>,
@@ -149,12 +149,15 @@ export type HeliconeAuth = JwtAuth | BearerAuthProxy | BearerAuth;
 export class DBWrapper {
   private supabaseClient: SupabaseClient<Database>;
   private secureCacheEnv: SecureCacheEnv;
-  private atomicRateLimiter: DurableObjectNamespace;
+  private atomicRateLimiter: Env["RATE_LIMITER"];
   private rateLimiter?: RateLimiter;
   private authParams?: AuthParams;
   private tier?: string;
 
-  constructor(private env: Env, private auth: HeliconeAuth) {
+  constructor(
+    private env: Env,
+    private auth: HeliconeAuth
+  ) {
     this.supabaseClient = createClient(
       env.SUPABASE_URL,
       env.SUPABASE_SERVICE_ROLE_KEY
@@ -162,6 +165,7 @@ export class DBWrapper {
     this.secureCacheEnv = {
       REQUEST_CACHE_KEY: env.REQUEST_CACHE_KEY,
       SECURE_CACHE: env.SECURE_CACHE,
+      REQUEST_CACHE_KEY_2: env.REQUEST_CACHE_KEY_2,
     };
     this.atomicRateLimiter = env.RATE_LIMITER;
   }
@@ -230,10 +234,18 @@ export class DBWrapper {
       accessDict: {
         cache: true,
       },
+      metaData: {
+        allowNegativeBalance: org.data.allow_negative_balance,
+        creditLimit: org.data.credit_limit,
+      },
     });
   }
 
   async getAuthParams(): Promise<Result<AuthParams, string>> {
+    if (this.env.ENVIRONMENT === "development") {
+      return this._getAuthParams();
+    }
+
     if (this.authParams !== undefined) {
       return ok(this.authParams);
     }
@@ -241,9 +253,9 @@ export class DBWrapper {
     const authParams = await getAndStoreInCache(
       `authParams3-${cacheKey}`,
       this.env,
-      async () => await this._getAuthParams()
+      async () => await this._getAuthParams(),
+      43200 // 12 hours
     );
-
     if (!authParams || authParams.error || !authParams.data) {
       return err(authParams?.error || "Invalid authentication.");
     }
@@ -298,6 +310,7 @@ export class DBWrapper {
         tier: string;
         id: string;
         percentLog: number;
+        freeLimitExceeded: string | null; // YYYY-MM format or null
       },
       string
     >
@@ -311,10 +324,11 @@ export class DBWrapper {
         tier: string;
         id: string;
         percentLog: number;
+        freeLimitExceeded: string | null;
       },
       string
     >(
-      `org-${authParams.data.organizationId}`,
+      `org-v3-${authParams.data.organizationId}`, // Bumped cache key version for type change
       this.secureCacheEnv,
       async () => {
         const { data, error } = await this.supabaseClient
@@ -330,8 +344,12 @@ export class DBWrapper {
           tier: data?.tier ?? "free",
           id: data?.id ?? "",
           percentLog: data?.percent_to_log ?? 100_000,
+          freeLimitExceeded:
+            (data as { free_limit_exceeded?: string | null })?.free_limit_exceeded ??
+            null,
         });
-      }
+      },
+      600 // 10 minutes - shorter TTL so freeLimitExceeded flag updates quickly after upgrade
     );
   }
 
@@ -394,24 +412,6 @@ export class DBWrapper {
     return { data: data, error: null };
   }
 
-  async getRequestById(
-    requestId: string
-  ): Promise<Result<Database["public"]["Tables"]["request"]["Row"], string>> {
-    const { data, error } = await this.supabaseClient
-      .from("request")
-      .select("*")
-      .match({
-        id: requestId,
-      })
-      .eq("helicone_org_id", await this.orgId())
-      .single();
-
-    if (error) {
-      return { data: null, error: error.message };
-    }
-    return { data: data, error: null };
-  }
-
   async insertAlert(
     alert: Database["public"]["Tables"]["alert"]["Insert"]
   ): Promise<Result<Database["public"]["Tables"]["alert"]["Row"], string>> {
@@ -442,72 +442,5 @@ export class DBWrapper {
     }
 
     return { error: null, data: null };
-  }
-
-  async uploadLogo(
-    logoFile: File,
-    logoUrl: string,
-    orgId: string
-  ): Promise<Result<null, string>> {
-    const { data, error } = await this.supabaseClient.storage
-      .from("organization_assets")
-      .upload(logoUrl, logoFile);
-
-    if (error || !data) {
-      return err(error.message);
-    }
-
-    const { error: updateError } = await this.supabaseClient
-      .from("organization")
-      .update({
-        logo_path: data.path,
-      })
-      .eq("id", orgId);
-
-    if (updateError) {
-      return err(updateError.message);
-    }
-
-    return ok(null);
-  }
-
-  async getLogoPath(orgId: string): Promise<Result<string, string>> {
-    const { data: organization, error: organizationErr } =
-      await this.supabaseClient
-        .from("organization")
-        .select("*")
-        .eq("id", orgId)
-        .single();
-
-    console.log(`organization: ${JSON.stringify(organization)}`);
-
-    if (organizationErr || !organization) {
-      return err(organizationErr?.message ?? "Failed to get organization.");
-    }
-
-    // If logo path is already set, return it
-    if (organization.logo_path) {
-      return ok(organization.logo_path);
-    }
-
-    if (!organization.reseller_id) {
-      return err("Reseller id not found on organization.");
-    }
-
-    // Get logo path from reseller id
-    const { data: resellerOrg, error: resellerOrgErr } =
-      await this.supabaseClient
-        .from("organization")
-        .select("*")
-        .eq("organization_id", organization.reseller_id)
-        .single();
-
-    if (resellerOrgErr || !resellerOrg?.logo_path) {
-      return err(
-        resellerOrgErr?.message ?? "Failed to get logo path from reseller id."
-      );
-    }
-
-    return ok(resellerOrg.logo_path);
   }
 }

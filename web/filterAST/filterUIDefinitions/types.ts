@@ -1,4 +1,4 @@
-import { FieldSpec, FilterOperator } from "../filterAst";
+import { FieldSpec, FilterOperator } from "@helicone-package/filters/types";
 
 // Define the type for the UI rendering constants
 export interface FilterUIDefinition {
@@ -11,7 +11,7 @@ export interface FilterUIDefinition {
   valueOptions?: { label: string; value: string | number | boolean }[];
   // Callback for dynamic searching of options
   onSearch?: (
-    searchTerm: string
+    searchTerm: string,
   ) => Promise<{ label: string; value: string | number | boolean }[]>;
 }
 

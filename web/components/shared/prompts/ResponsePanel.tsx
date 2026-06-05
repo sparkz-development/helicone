@@ -13,6 +13,7 @@ import { PiBrainBold, PiChatsBold, PiToolboxBold } from "react-icons/pi";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import GlassHeader from "../universal/GlassHeader";
+import { DiffHighlight } from "@/components/templates/welcome/diffHighlight";
 
 interface ResponsePanelProps {
   response?: { content: string; reasoning: string; calls: string };
@@ -27,9 +28,9 @@ export default function ResponsePanel({
   const [view, setView] = useState<"render" | "text">("render");
 
   return (
-    <div className="flex flex-col group">
+    <div className="group flex flex-col">
       {/* Header */}
-      <GlassHeader className="h-14 px-4 flex-shrink-0">
+      <GlassHeader className="h-14 flex-shrink-0 px-4">
         <h2 className="font-semibold text-secondary">Response</h2>
         <div className="flex flex-row items-center gap-2">
           {response && onAddToMessages && (
@@ -46,7 +47,7 @@ export default function ResponsePanel({
                       scrollToBottom?.();
                     }}
                   >
-                    <PiChatsBold className="w-4 h-4" />
+                    <PiChatsBold className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Add response to messages</TooltipContent>
@@ -71,11 +72,11 @@ export default function ResponsePanel({
       </GlassHeader>
 
       {/* Response Views */}
-      <div className="flex flex-col gap-4 select-text px-4 pb-2.5">
+      <div className="flex select-text flex-col gap-4 px-4 pb-2.5">
         {/* Reasoning */}
         {response?.reasoning && (
-          <div className="flex flex-row gap-2 text-xs text-tertiary border border-border rounded-lg p-2.5">
-            <PiBrainBold className="w-4 h-4 shrink-0" />
+          <div className="text-tertiary flex flex-row gap-2 rounded-lg border border-border p-2.5 text-xs">
+            <PiBrainBold className="h-4 w-4 shrink-0" />
             <p>{response.reasoning}</p>
           </div>
         )}
@@ -90,18 +91,18 @@ export default function ResponsePanel({
               {response.content}
             </ReactMarkdown>
           ) : (
-            <p className="text-sm text-secondary pt-0.5">{response.content}</p>
+            <p className="pt-0.5 text-sm text-secondary">{response.content}</p>
           )
         ) : (
-          <p className="whitespace-pre-wrap text-sm text-tertiary">
+          <p className="text-tertiary whitespace-pre-wrap text-sm">
             Response will appear here...
           </p>
         )}
 
         {/* Calls */}
         {response?.calls && (
-          <div className="flex flex-row gap-2 text-xs text-tertiary border border-border rounded-lg p-2.5">
-            <PiToolboxBold className="w-4 h-4 shrink-0" />
+          <div className="text-tertiary flex flex-row gap-2 rounded-lg border border-border p-2.5 text-xs">
+            <PiToolboxBold className="h-4 w-4 shrink-0" />
             {view === "render" ? (
               <JsonRenderer
                 showCopyButton={false}
@@ -135,7 +136,7 @@ export const markdownComponents: Components = {
     if (isInline) {
       return (
         <code
-          className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono text-secondary"
+          className="font-mono rounded bg-muted px-1.5 py-0.5 text-sm text-secondary"
           {...props}
         >
           {children}
@@ -144,23 +145,18 @@ export const markdownComponents: Components = {
     }
 
     return (
-      <div className="my-4 w-full overflow-hidden rounded-lg border border-border bg-muted/50 shadow-sm">
-        {/* Code header with language indicator */}
-        {language && (
-          <div className="flex items-center justify-between border-b border-border px-4 py-2">
-            <span className="text-xs font-medium text-muted-foreground">
-              {language}
-            </span>
-          </div>
-        )}
-
-        {/* Code content */}
-        <div className="relative">
-          <pre className="overflow-x-auto p-4 text-sm font-mono text-secondary">
-            <code className="block">{children}</code>
-          </pre>
-        </div>
-      </div>
+      <DiffHighlight
+        code={String(children).replace(/\n$/, "")}
+        language={language}
+        newLines={[]}
+        oldLines={[]}
+        minHeight={false}
+        maxHeight={false}
+        textSize="sm"
+        className="rounded-lg bg-[#1a1b26] [&_pre]:py-4"
+        preClassName="p-4"
+        marginTop={false}
+      />
     );
   },
   // Add styling for other markdown elements

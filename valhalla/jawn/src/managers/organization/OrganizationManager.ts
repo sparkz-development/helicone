@@ -6,6 +6,7 @@ import { dbExecute } from "../../lib/shared/db/dbExecute";
 import { err, ok, Result } from "../../packages/common/result";
 import { OrganizationStore } from "../../lib/stores/OrganizationStore";
 import { BaseManager } from "../BaseManager";
+import crypto from "crypto";
 
 export type NewOrganizationParams =
   Database["public"]["Tables"]["organization"]["Insert"];
@@ -17,9 +18,9 @@ export type UpdateOrganizationParams = Pick<
   | "icon"
   | "org_provider_key"
   | "limits"
-  | "reseller_id"
   | "organization_type"
   | "onboarding_status"
+  | "default_time_filter"
 > & {
   variant?: string;
 };
@@ -56,6 +57,7 @@ export type OrganizationMember = {
   email: string;
   member: string;
   org_role: string;
+  created_at: string;
 };
 
 export type OrganizationOwner = {
@@ -67,6 +69,8 @@ export type OnboardingStatus = Partial<{
   currentStep: string;
   selectedTier: string;
   hasOnboarded: boolean;
+  hasIntegrated: boolean;
+  hasCompletedQuickstart: boolean;
   members: any[];
   addons: {
     prompts: boolean;
@@ -122,9 +126,8 @@ export class OrganizationManager extends BaseManager {
     if (createOrgParams.tier !== "free") {
       return err("Only free tier is supported");
     }
-    const insert = await this.organizationStore.createNewOrganization(
-      createOrgParams
-    );
+    const insert =
+      await this.organizationStore.createNewOrganization(createOrgParams);
     if (insert.error || !insert.data) {
       return err(insert.error);
     }
@@ -174,7 +177,7 @@ export class OrganizationManager extends BaseManager {
   async addMember(
     organizationId: string,
     email: string
-  ): Promise<Result<string, string>> {
+  ): Promise<Result<{ userId: string; temporaryPassword?: string }, string>> {
     if (!this.authParams.userId) return err("Unauthorized");
     let { data: userId, error: userIdError } =
       await this.organizationStore.getUserByEmail(email);
@@ -182,11 +185,19 @@ export class OrganizationManager extends BaseManager {
     if (userIdError) {
       return err(userIdError);
     }
+    let temporaryPassword: string | undefined;
     if (!userId || userId.length === 0) {
       try {
         // We still need to use the auth API for this specific function
         const authClient = getHeliconeAuthClient();
-        const userResult = await authClient.createUser({ email, otp: true });
+        if (process.env.NEXT_PUBLIC_BETTER_AUTH === "true") {
+          temporaryPassword = crypto.randomBytes(18).toString("base64url");
+        }
+        const userResult = await authClient.createUser({
+          email,
+          password: temporaryPassword,
+          otp: true,
+        });
         if (userResult.error) {
           return err(userResult.error);
         }
@@ -195,7 +206,8 @@ export class OrganizationManager extends BaseManager {
           return err("Failed to create user");
         }
 
-        userId = userResult.data?.id;
+        // we refetch the id since createUser can return a better auth format id (not a UUID)
+        userId = userResult.data?.id ?? "";
         userIdError = null;
       } catch (error) {
         return err(`Failed to send OTP: ${error}`);
@@ -224,7 +236,7 @@ export class OrganizationManager extends BaseManager {
       return err(insertError);
     }
 
-    return ok(userId!);
+    return ok({ userId: userId!, temporaryPassword });
   }
 
   async updateMember(
@@ -248,6 +260,33 @@ export class OrganizationManager extends BaseManager {
         organizationId,
         this.authParams.userId,
         orgRole,
+        memberId
+      );
+
+    if (updateError) {
+      return err(updateError);
+    }
+    return ok("success");
+  }
+
+  async updateOwner(
+    organizationId: string,
+    memberId: string
+  ): Promise<Result<string, string>> {
+    if (!this.authParams.userId) return err("Unauthorized");
+    const isUserOwner = await this.organizationStore.isUserOwner(
+      organizationId,
+      this.authParams.userId
+    );
+    if (!isUserOwner) {
+      return err("User does not have access to update member");
+    }
+    if (!organizationId || !memberId) return err("Invalid parameters");
+
+    const { error: updateError } =
+      await this.organizationStore.updateOrganizationOwner(
+        organizationId,
+        this.authParams.userId,
         memberId
       );
 
@@ -491,8 +530,7 @@ export class OrganizationManager extends BaseManager {
   async updateOnboardingStatus(
     organizationId: string,
     onboardingStatus: OnboardingStatus,
-    name: string,
-    hasOnboarded: boolean
+    name: string
   ): Promise<Result<string, string>> {
     if (!this.authParams.userId) return err("Unauthorized");
 
@@ -509,8 +547,7 @@ export class OrganizationManager extends BaseManager {
 
     const { data, error } = await this.organizationStore.updateOnboardingStatus(
       onboardingStatus,
-      name,
-      hasOnboarded
+      name
     );
 
     if (error || !data) {

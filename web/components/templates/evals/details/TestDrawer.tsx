@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { logger } from "@/lib/telemetry/logger";
 import { X, PlayCircle, CheckCircle2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import useNotification from "@/components/shared/notification/useNotification";
@@ -41,7 +42,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
       try {
         const requests = await jawn.POST("/v1/request/query-clickhouse", {
           body: {
-            filter: "all",
+            filter: {},
             limit: 1,
             sort: {
               created_at: "desc",
@@ -57,7 +58,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
           return requests.data?.data[0].request_id;
         }
       } catch (error) {
-        console.error("Failed to fetch latest request", error);
+        logger.error({ error }, "Failed to fetch latest request");
       }
       return null;
     },
@@ -94,7 +95,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
           return request.data.data;
         }
       } catch (error) {
-        console.error("Failed to fetch request data", error);
+        logger.error({ error, requestId }, "Failed to fetch request data");
         notification.setNotification("Failed to fetch request data", "error");
       }
       return null;
@@ -237,7 +238,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
           return;
         }
       } catch (e) {
-        console.error("Error parsing test response:", e);
+        logger.error({ error: e }, "Error parsing test response");
       }
 
       // Check if we got a specific error about score not found
@@ -259,7 +260,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
               // First, look for any key that contains the evaluator name (ignoring case)
               const evaluatorNameLower = evaluator.name.toLowerCase();
               let matchingKey = Object.keys(extractedJson).find((key) =>
-                key.toLowerCase().includes(evaluatorNameLower)
+                key.toLowerCase().includes(evaluatorNameLower),
               );
 
               // If no match by name, just take the first value
@@ -312,7 +313,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
           }
         } catch (jsonError) {
           // If parsing fails, continue with the original error
-          console.error("Failed to parse score from error:", jsonError);
+          logger.error({ jsonError }, "Failed to parse score from error");
         }
       }
 
@@ -327,13 +328,13 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
         });
       }, 100);
     } catch (error) {
-      console.error("Error testing evaluator:", error);
+      logger.error({ error, evaluatorId }, "Error testing evaluator");
       const errorMessage =
         error instanceof Error
           ? error.message
           : typeof error === "object"
-          ? JSON.stringify(error, null, 2)
-          : String(error || "Unknown error");
+            ? JSON.stringify(error, null, 2)
+            : String(error || "Unknown error");
 
       setResult({
         _type: "error",
@@ -344,7 +345,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
         error instanceof SyntaxError
           ? "Invalid JSON format in input or output body"
           : errorMessage,
-        "error"
+        "error",
       );
 
       // Scroll to results after an error too
@@ -378,9 +379,9 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
       />
 
       {/* Drawer */}
-      <div className="relative w-[500px] h-full bg-background border-l shadow-lg flex flex-col">
+      <div className="relative flex h-full w-[500px] flex-col border-l bg-background shadow-lg">
         {/* Header */}
-        <div className="p-4 border-b flex-shrink-0">
+        <div className="flex-shrink-0 border-b p-4">
           <div className="flex items-center justify-between">
             <h3 className="font-medium">Test Evaluator</h3>
             <Button variant="ghost" size="icon" onClick={onClose}>
@@ -390,12 +391,12 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
         </div>
 
         {/* Mode Selector */}
-        <div className="p-4 border-b flex-shrink-0">
-          <div className="inline-flex rounded-md border bg-muted/30 p-0 h-9 w-full">
+        <div className="flex-shrink-0 border-b p-4">
+          <div className="inline-flex h-9 w-full rounded-md border bg-muted/30 p-0">
             <button
-              className={`flex-1 text-sm rounded-l-md px-4 py-2 ${
+              className={`flex-1 rounded-l-md px-4 py-2 text-sm ${
                 testMode === "requestId"
-                  ? "bg-background border-r shadow-sm"
+                  ? "border-r bg-background shadow-sm"
                   : "hover:bg-muted/50"
               }`}
               onClick={() => setTestMode("requestId")}
@@ -403,7 +404,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
               Request ID
             </button>
             <button
-              className={`flex-1 text-sm rounded-r-md px-4 py-2 ${
+              className={`flex-1 rounded-r-md px-4 py-2 text-sm ${
                 testMode === "manual"
                   ? "bg-background shadow-sm"
                   : "hover:bg-muted/50"
@@ -417,13 +418,13 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
 
         {/* Scrollable Content Area - Explicit calc height considering the header + mode selector + button height */}
         <div
-          className="overflow-y-auto flex-1"
+          className="flex-1 overflow-y-auto"
           style={{ height: "calc(100% - 188px)" }}
         >
           {/* Request ID Input */}
           {testMode === "requestId" && (
-            <div className="p-4 space-y-2">
-              <label htmlFor="request-id" className="text-sm font-medium block">
+            <div className="space-y-2 p-4">
+              <label htmlFor="request-id" className="block text-sm font-medium">
                 Request ID
               </label>
               <Input
@@ -440,13 +441,13 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
 
           {/* Manual Input Interface */}
           {testMode === "manual" && (
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
                 className="w-full"
               >
-                <TabsList className="w-full grid grid-cols-2 bg-muted/30 p-0 h-9">
+                <TabsList className="grid h-9 w-full grid-cols-2 bg-muted/30 p-0">
                   <TabsTrigger value="inputBody" className="text-xs">
                     Input Body
                   </TabsTrigger>
@@ -457,11 +458,11 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
 
                 <TabsContent
                   value="inputBody"
-                  className="mt-2 border rounded-md bg-background overflow-hidden"
+                  className="mt-2 overflow-hidden rounded-md border bg-background"
                 >
                   <div className="h-[250px]">
                     <MarkdownEditor
-                      className="text-sm h-full border-0"
+                      className="h-full border-0 text-sm"
                       text={inputBody}
                       setText={setInputBody}
                       language="json"
@@ -472,11 +473,11 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
 
                 <TabsContent
                   value="outputBody"
-                  className="mt-2 border rounded-md bg-background overflow-hidden"
+                  className="mt-2 overflow-hidden rounded-md border bg-background"
                 >
                   <div className="h-[250px]">
                     <MarkdownEditor
-                      className="text-sm h-full border-0"
+                      className="h-full border-0 text-sm"
                       text={outputBody}
                       setText={setOutputBody}
                       language="json"
@@ -490,29 +491,29 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
 
           {/* Results Section - Only shown when there are results */}
           {result && (
-            <div className="p-4 border-t" ref={resultsRef}>
-              <h3 className="text-sm font-medium mb-3">Test Results</h3>
-              <div className="border rounded-md bg-background p-3 overflow-y-auto max-h-[180px]">
+            <div className="border-t p-4" ref={resultsRef}>
+              <h3 className="mb-3 text-sm font-medium">Test Results</h3>
+              <div className="max-h-[180px] overflow-y-auto rounded-md border bg-background p-3">
                 {isLoading ? (
-                  <div className="text-center py-4">
+                  <div className="py-4 text-center">
                     <Muted>Running test...</Muted>
                   </div>
                 ) : result._type === "error" &&
                   result.error &&
                   result.error.includes("Unknown error - try again") ? (
-                  <div className="bg-muted p-3 rounded-md flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+                  <div className="flex items-center gap-2 rounded-md bg-muted p-3">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
                     <div>
                       <H4 className="text-sm">Score</H4>
                       <div className="text-lg font-semibold">True</div>
                     </div>
                   </div>
                 ) : result._type === "error" ? (
-                  <div className="bg-destructive/10 p-3 rounded-md border border-destructive/20 flex items-start gap-2">
-                    <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                  <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
                     <div>
                       <H4 className="text-sm text-destructive">Error</H4>
-                      <pre className="text-xs mt-1 whitespace-pre-wrap">
+                      <pre className="mt-1 whitespace-pre-wrap text-xs">
                         {typeof result.error === "object"
                           ? JSON.stringify(result.error, null, 2)
                           : result.error}
@@ -520,8 +521,8 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
                     </div>
                   </div>
                 ) : result._type === "completed" ? (
-                  <div className="bg-muted p-3 rounded-md flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+                  <div className="flex items-center gap-2 rounded-md bg-muted p-3">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
                     <div>
                       <H4 className="text-sm">Score</H4>
                       <div className="text-lg font-semibold">
@@ -530,8 +531,8 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-muted p-3 rounded-md flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+                  <div className="flex items-center gap-2 rounded-md bg-muted p-3">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
                     <div>
                       <H4 className="text-sm">Score</H4>
                       <div className="text-lg font-semibold">
@@ -540,10 +541,10 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
                             ? "True"
                             : "False"
                           : typeof result.data === "number"
-                          ? result.data
-                          : result.data?.score !== undefined
-                          ? result.data.score
-                          : JSON.stringify(result.data)}
+                            ? result.data
+                            : result.data?.score !== undefined
+                              ? result.data.score
+                              : JSON.stringify(result.data)}
                       </div>
                     </div>
                   </div>
@@ -554,7 +555,7 @@ export function TestDrawer({ evaluatorId, isOpen, onClose }: TestDrawerProps) {
         </div>
 
         {/* Footer Button - Fixed position */}
-        <div className="h-[68px] p-3 border-t bg-background flex-shrink-0">
+        <div className="h-[68px] flex-shrink-0 border-t bg-background p-3">
           <Button
             onClick={handleRunTest}
             disabled={

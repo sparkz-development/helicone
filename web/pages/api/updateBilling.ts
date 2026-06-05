@@ -8,12 +8,12 @@ type Data = {
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<Data>
+  res: NextApiResponse<Data>,
 ) {
-  const stripe = await loadStripe(
-    "sk_test_51MUEfoFeVmeixR9wo5rQfV6pLNhZpQYYcXclEqUxYsMyREpKBC054irVCORFgcNBC3N4g4Zn35MbeBWSM5AUGBc1002dy4iDYA"
-  );
-  var charge = await stripe!.paymentRequest({
+  const stripe = await loadStripe(process.env.STRIPE_PUBLISHABLE_KEY!);
+
+  // Create payment request (test endpoint)
+  await stripe!.paymentRequest({
     country: "US",
     currency: "usd",
     total: {

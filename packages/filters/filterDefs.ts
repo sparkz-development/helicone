@@ -1,4 +1,3 @@
-
 export type AllOperators =
   | "equals"
   | "like"
@@ -11,7 +10,8 @@ export type AllOperators =
   | "contains"
   | "not-contains"
   | "gin-contains"
-  | "vector-contains";
+  | "vector-contains"
+  | "has";
 
 export type TextOperators = Record<
   "not-equals" | "equals" | "like" | "ilike" | "contains" | "not-contains",
@@ -27,9 +27,15 @@ export type NumberOperators = Record<
 
 export type BooleanOperators = Record<"equals", boolean>;
 
-export type TimestampOperators = Record<"gte" | "lte" | "lt" | "gt", string>;
+export type TimestampOperators = Record<
+  "equals" | "gte" | "lte" | "lt" | "gt",
+  string
+>;
 
-export type TimestampOperatorsTyped = Record<"gte" | "lte" | "lt" | "gt", Date>;
+export type TimestampOperatorsTyped = Record<
+  "equals" | "gte" | "lte" | "lt" | "gt",
+  Date
+>;
 
 export type AnyOperator =
   | SingleKey<TextOperators>
@@ -144,16 +150,14 @@ export type FilterLeafExperiment = SingleKey<ExperimentToOperators>;
 type ExperimentHypothesisRunToOperator = {
   result_request_id: SingleKey<TextOperators>;
 };
-export type ExperimentHypothesisRunScoreValue = SingleKey<ExperimentHypothesisRunToOperator>;
+export type ExperimentHypothesisRunScoreValue =
+  SingleKey<ExperimentHypothesisRunToOperator>;
 
 // score_value
 type ScoreValueToOperator = {
   request_id: SingleKey<TextOperators>;
 };
-export type FilterLeafScoreValue = 
-  SingleKey<ScoreValueToOperator>;
-
-
+export type FilterLeafScoreValue = SingleKey<ScoreValueToOperator>;
 
 // CLICKHOUSE TABLES
 
@@ -176,7 +180,10 @@ export type FilterLeafRequestResponseLog =
 
 // request_response_rmt
 interface RequestResponseRMTToOperators {
+  country_code: SingleKey<TextOperators>;
   latency: SingleKey<NumberOperators>;
+  cost: SingleKey<NumberOperators>;
+  provider: SingleKey<TextOperators>;
   time_to_first_token: SingleKey<NumberOperators>;
   status: SingleKey<NumberOperators>;
   request_created_at: SingleKey<TimestampOperatorsTyped>;
@@ -194,6 +201,9 @@ interface RequestResponseRMTToOperators {
   prompt_cache_write_tokens: SingleKey<NumberOperators>;
   total_tokens: SingleKey<NumberOperators>;
   target_url: SingleKey<TextOperators>;
+  property_key: {
+    equals: string;
+  };
   properties: {
     [key: string]: SingleKey<TextOperators>;
   };
@@ -204,12 +214,17 @@ interface RequestResponseRMTToOperators {
     [key: string]: SingleKey<TextOperators>;
   };
   scores_column: SingleKey<TextOperators>;
-  request_body: SingleKey<VectorOperators>;
-  response_body: SingleKey<VectorOperators>;
+  request_body: SingleKey<TextOperators>;
+  response_body: SingleKey<TextOperators>;
   cache_enabled: SingleKey<BooleanOperators>;
   cache_reference_id: SingleKey<TextOperators>;
+  cached: SingleKey<BooleanOperators>;
   assets: SingleKey<TextOperators>;
   "helicone-score-feedback": SingleKey<BooleanOperators>; // TODO: make this not a string literal key
+  prompt_id: SingleKey<TextOperators>;
+  prompt_version: SingleKey<TextOperators>;
+  request_referrer: SingleKey<TextOperators>;
+  is_passthrough_billing: SingleKey<BooleanOperators>;
 }
 export type FilterLeafRequestResponseRMT =
   SingleKey<RequestResponseRMTToOperators>;
@@ -232,16 +247,16 @@ export type FilterLeafSessionsRequestResponseRMT =
 
 // users_view
 type UserViewToOperators = {
-  user_id: SingleKey<TextOperators>;
-  active_for: SingleKey<NumberOperators>;
-  first_active: SingleKey<TimestampOperators>;
-  last_active: SingleKey<TimestampOperators>;
-  total_requests: SingleKey<NumberOperators>;
-  average_requests_per_day_active: SingleKey<NumberOperators>;
-  average_tokens_per_request: SingleKey<NumberOperators>;
-  total_completion_tokens: SingleKey<NumberOperators>;
-  total_prompt_token: SingleKey<NumberOperators>;
-  cost: SingleKey<NumberOperators>;
+  user_user_id: SingleKey<TextOperators>;
+  user_active_for: SingleKey<NumberOperators>;
+  user_first_active: SingleKey<TimestampOperatorsTyped>;
+  user_last_active: SingleKey<TimestampOperatorsTyped>;
+  user_total_requests: SingleKey<NumberOperators>;
+  user_average_requests_per_day_active: SingleKey<NumberOperators>;
+  user_average_tokens_per_request: SingleKey<NumberOperators>;
+  user_total_completion_tokens: SingleKey<NumberOperators>;
+  user_total_prompt_tokens: SingleKey<NumberOperators>;
+  user_cost: SingleKey<NumberOperators>;
 };
 export type FilterLeafUserView = SingleKey<UserViewToOperators>;
 
@@ -316,7 +331,7 @@ export type CacheMetricsTableToOperators = {
   last_hit: SingleKey<TimestampOperatorsTyped>;
   request_body: SingleKey<TextOperators>;
   response_body: SingleKey<TextOperators>;
-}
+};
 export type FilterLeafCacheMetrics = SingleKey<CacheMetricsTableToOperators>;
 
 // rate_limit_log
@@ -326,6 +341,15 @@ export type RateLimitTableToOperators = {
 };
 export type FilterLeafRateLimitLog = SingleKey<RateLimitTableToOperators>;
 
+// CLICKHOUSE TABLES: SIMPLE MATERIALIZED VIEWS
+
+// organization_properties
+type OrganizationPropertiesToOperators = {
+  organization_id: SingleKey<TextOperators>;
+  property_key: SingleKey<TextOperators>;
+};
+export type FilterLeafOrganizationProperties =
+  SingleKey<OrganizationPropertiesToOperators>;
 
 // FilterLeaf
 export type TablesAndViews = {
@@ -342,7 +366,6 @@ export type TablesAndViews = {
   experiment_hypothesis_run: ExperimentHypothesisRunScoreValue;
   score_value: FilterLeafScoreValue;
 
-
   // CLICKHOUSE TABLES
   request_response_log: FilterLeafRequestResponseLog;
   request_response_rmt: FilterLeafRequestResponseRMT;
@@ -355,6 +378,10 @@ export type TablesAndViews = {
   cache_metrics: FilterLeafCacheMetrics;
   rate_limit_log: FilterLeafRateLimitLog;
 
+  // SIMPLE MATERIALIZED VIEWS
+  // cheap tables, made for quick stat queries
+  organization_properties: FilterLeafOrganizationProperties;
+
   properties: {
     [key: string]: SingleKey<TextOperators>;
   };
@@ -364,7 +391,8 @@ export type TablesAndViews = {
 };
 export type FilterLeaf = SingleKey<TablesAndViews>;
 
-export type FilterNode = FilterLeaf | FilterBranch | "all";
+// "all" is used by frontend to represent "match everything" - it's handled in buildFilter
+export type FilterNode = FilterLeaf | FilterBranch | "all" | {};
 
 export interface FilterBranch {
   left: FilterNode;
@@ -392,4 +420,3 @@ export type FilterLeafSubset<T extends keyof TablesAndViews> = Pick<
 //   | FilterLeafSubset<T>
 //   | FilterBranchSubset<T>
 //   | "all";
-

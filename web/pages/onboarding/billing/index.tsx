@@ -1,160 +1,311 @@
-import { OnboardingHeader } from "@/components/onboarding/OnboardingHeader";
-import { useQuery } from "@tanstack/react-query";
-import { useMutation } from "@tanstack/react-query";
-import { getJawnClient } from "@/lib/clients/jawn";
+"use client";
 import { useOrg } from "@/components/layout/org/organizationContext";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/router";
-import { useDraftOnboardingStore } from "@/services/hooks/useOrgOnboarding";
-import { TeamPlanCheckout } from "@/components/onboarding/Checkout/TeamPlanCheckout";
-import { ProPlanCheckout } from "@/components/onboarding/Checkout/ProPlanCheckout";
+import { OnboardingHeader } from "@/components/onboarding/OnboardingHeader";
 import useNotification from "@/components/shared/notification/useNotification";
+import { Button } from "@/components/ui/button";
+import { H1, Muted, Small } from "@/components/ui/typography";
+import { useOrgOnboarding } from "@/services/hooks/useOrgOnboarding";
+import { CreditCard, Key, ArrowRight, DollarSign, Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useMemo } from "react";
+import PaymentModal from "@/components/templates/settings/PaymentModal";
+import { useCredits } from "@/services/hooks/useCredits";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { ProviderKeySettings } from "@/components/templates/settings/providerKeySettings";
 
-export default function BillingPage() {
-  const org = useOrg();
+export default function BillingOnboardingPage() {
   const router = useRouter();
-  const { draftPlan, draftMembers, draftAddons } = useDraftOnboardingStore(
-    org?.currentOrg?.id ?? ""
-  )();
+  const org = useOrg();
   const { setNotification } = useNotification();
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
-  const createdOrgId = org?.currentOrg?.id;
+  const { isLoading, updateCurrentStep, hasProviderKeys, refetchProviderKeys } =
+    useOrgOnboarding(org?.currentOrg?.id ?? "");
 
-  // Move mutations to the top level
-  const upgradeToPro = useMutation({
-    mutationFn: async (variables: { addons: any; seats?: number }) => {
-      const jawn = getJawnClient();
-      const endpoint =
-        subscription.data?.data?.status === "canceled"
-          ? "/v1/stripe/subscription/existing-customer/upgrade-to-pro"
-          : "/v1/stripe/subscription/new-customer/upgrade-to-pro";
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isProviderSheetOpen, setIsProviderSheetOpen] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState<"ptb" | "byok" | null>(
+    null,
+  );
 
-      const result = await jawn.POST(endpoint, {
-        body: {
-          addons: {
-            prompts: variables.addons.prompts,
-            experiments: variables.addons.experiments,
-            evals: variables.addons.evals,
-          },
-          seats: variables.seats,
-          ui_mode: "embedded",
-        },
-      });
-      return result;
-    },
-  });
+  const { data: creditData, isLoading: creditsLoading } = useCredits();
 
-  const upgradeToTeamBundle = useMutation({
-    mutationFn: async () => {
-      const jawn = getJawnClient();
-      const endpoint =
-        subscription.data?.data?.status === "canceled"
-          ? "/v1/stripe/subscription/existing-customer/upgrade-to-team-bundle"
-          : "/v1/stripe/subscription/new-customer/upgrade-to-team-bundle";
+  const hasCredits = useMemo(() => {
+    return (creditData?.balance ?? 0) > 0;
+  }, [creditData]);
 
-      const result = await jawn.POST(endpoint, {
-        body: {
-          ui_mode: "embedded",
-        },
-      });
-      return result;
-    },
-  });
-
-  const subscription = useQuery({
-    queryKey: ["subscription", createdOrgId],
-    queryFn: async (query: any) => {
-      const jawn = getJawnClient();
-      const subscription = await jawn.GET("/v1/stripe/subscription");
-      return subscription;
-    },
-    enabled: !!createdOrgId,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-  });
+  const hasBillingSetup = hasCredits || hasProviderKeys;
 
   useEffect(() => {
-    if (
-      subscription.data?.data?.status === "active" ||
-      subscription.data?.data?.status === "trialing" ||
-      subscription.data?.data?.status === "incomplete"
-    ) {
-      setNotification("You've already subscribed to Helicone!", "success");
-      router.replace("/onboarding/integrate");
+    updateCurrentStep("BILLING");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Poll for provider keys since they might be added from settings page
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetchProviderKeys();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [refetchProviderKeys]);
+
+  const handleContinue = async () => {
+    if (!hasBillingSetup) {
+      setNotification(
+        "Please set up billing (add credits or configure provider keys) to continue",
+        "error",
+      );
+      return;
     }
-  }, [subscription.data, router]);
 
-  useEffect(() => {
-    const createCheckoutSession = async () => {
-      if (!createdOrgId || isCreatingCheckout) return;
+    updateCurrentStep("REQUEST");
+    router.push("/onboarding/request");
+  };
 
-      // Don't create a session if we don't have the plan selected
-      if (!draftPlan) return;
+  const handleSelectPTB = () => {
+    setSelectedMethod("ptb");
+    setIsPaymentModalOpen(true);
+  };
 
-      try {
-        setIsCreatingCheckout(true);
-        let result;
-
-        if (draftPlan === "team") {
-          result = await upgradeToTeamBundle.mutateAsync();
-        } else {
-          result = await upgradeToPro.mutateAsync({
-            addons: draftAddons || {},
-            seats: draftMembers.length + 1, // +1 for the owner
-          });
-        }
-
-        if (result.data) {
-          setClientSecret(result.data);
-        }
-      } catch (error) {
-        console.error("Error creating checkout session:", error);
-      } finally {
-        setIsCreatingCheckout(false);
-      }
-    };
-
-    // Reset client secret when dependencies change
-    setClientSecret(null);
-    createCheckoutSession();
-  }, [createdOrgId, draftPlan, draftMembers.length, draftAddons]);
-
-  if (subscription.isLoading) {
+  if (isLoading || creditsLoading) {
     return (
-      <OnboardingHeader>
-        <main className="mx-auto pt-12 px-4 max-w-4xl">
-          <div className="flex items-center justify-center">
+      <div className="flex min-h-dvh w-full flex-col items-center">
+        <OnboardingHeader />
+        <div className="mx-auto mt-12 w-full max-w-2xl px-4">
+          <div className="flex flex-col gap-4">
             <div className="animate-pulse">Loading...</div>
           </div>
-        </main>
-      </OnboardingHeader>
+        </div>
+      </div>
     );
   }
 
   return (
     <OnboardingHeader>
-      <main
-        className={`mx-auto pt-12 px-4 ${
-          draftPlan === "team" ? "max-w-7xl" : "max-w-4xl"
-        }`}
-      >
-        <div className="max-w-[1000px] mx-auto">
-          <header className="mb-8 ml-0 md:ml-16">
-            <h1 className="text-2xl font-semibold">Add billing information</h1>
-            <p className="text-sm text-slate-500 mt-2">
-              You can add billing information later, but you&apos;ll need to do
-              it before you can use Helicone.
-            </p>
-          </header>
-        </div>
+      <div className="mx-auto mt-12 w-full max-w-2xl px-4">
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <H1>Set up billing</H1>
+            <Muted>
+              Choose how you&apos;d like to pay for AI model usage through
+              Helicone.
+            </Muted>
+          </div>
 
-        {draftPlan === "team" ? (
-          <TeamPlanCheckout clientSecret={clientSecret} />
-        ) : (
-          <ProPlanCheckout clientSecret={clientSecret} />
-        )}
-      </main>
+          {/* Status Banner */}
+          {hasBillingSetup && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+                  <DollarSign className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="flex-1">
+                  <Small className="font-semibold text-green-900 dark:text-green-100">
+                    Billing configured
+                  </Small>
+                  <Small className="text-green-700 dark:text-green-300">
+                    {hasCredits &&
+                      `You have $${(creditData?.balance ?? 0).toFixed(2)} in credits. `}
+                    {hasProviderKeys && "You have provider keys configured. "}
+                    You&apos;re ready to continue!
+                  </Small>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Billing Options */}
+          <div className="flex flex-col gap-4">
+            {/* Pass-Through Billing (PTB) Option */}
+            <button
+              onClick={handleSelectPTB}
+              className={`relative flex flex-col gap-3 rounded-lg border-2 p-6 text-left transition-all ${
+                selectedMethod === "ptb" || hasCredits
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-background hover:border-primary/50"
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Small className="font-semibold">
+                        Pass-Through Billing
+                      </Small>
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        Recommended
+                      </span>
+                    </div>
+                    <Muted className="text-xs">
+                      Simple pay-as-you-go pricing
+                    </Muted>
+                  </div>
+                </div>
+                {hasCredits && (
+                  <div className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-1 dark:bg-green-900">
+                    <Zap className="h-3 w-3 text-green-600 dark:text-green-400" />
+                    <span className="text-xs font-medium text-green-700 dark:text-green-300">
+                      ${(creditData?.balance ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="ml-13 flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400">✓</span>
+                  <Small className="text-muted-foreground">
+                    No provider accounts needed
+                  </Small>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400">✓</span>
+                  <Small className="text-muted-foreground">
+                    Consolidated billing across all providers
+                  </Small>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400">✓</span>
+                  <Small className="text-muted-foreground">
+                    Transparent usage tracking
+                  </Small>
+                </div>
+              </div>
+
+              <div className="ml-13">
+                <Button
+                  variant="action"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectPTB();
+                  }}
+                >
+                  {hasCredits ? "Add More Credits" : "Add Credits"}
+                </Button>
+              </div>
+            </button>
+
+            {/* BYOK Option */}
+            <div
+              className={`relative flex flex-col gap-3 rounded-lg border-2 p-6 text-left transition-all ${
+                selectedMethod === "byok" || hasProviderKeys
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-background hover:border-primary/50"
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                    <Key className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <Small className="font-semibold">
+                      Bring Your Own Keys (BYOK)
+                    </Small>
+                    <Muted className="text-xs">
+                      Use your existing provider accounts
+                    </Muted>
+                  </div>
+                </div>
+                {hasProviderKeys && (
+                  <div className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-1 dark:bg-green-900">
+                    <Zap className="h-3 w-3 text-green-600 dark:text-green-400" />
+                    <span className="text-xs font-medium text-green-700 dark:text-green-300">
+                      Configured
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="ml-13 flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400">✓</span>
+                  <Small className="text-muted-foreground">
+                    Direct billing from providers
+                  </Small>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400">✓</span>
+                  <Small className="text-muted-foreground">
+                    Use existing agreements and credits
+                  </Small>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-green-600 dark:text-green-400">✓</span>
+                  <Small className="text-muted-foreground">
+                    Full control over API keys
+                  </Small>
+                </div>
+              </div>
+
+              <div className="ml-13">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsProviderSheetOpen(true)}
+                >
+                  {hasProviderKeys
+                    ? "Manage Provider Keys"
+                    : "Configure Provider Keys"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Helper text */}
+          <div className="rounded-lg bg-muted/50 p-4">
+            <Small className="text-muted-foreground">
+              💡 You can use both methods simultaneously. Credits will be used
+              when no provider keys are configured, or when you explicitly
+              request pass-through billing.
+            </Small>
+          </div>
+
+          {/* Continue button */}
+          <div className="flex justify-end">
+            <Button
+              variant="action"
+              className="w-full sm:w-auto"
+              onClick={handleContinue}
+              disabled={!hasBillingSetup}
+            >
+              Continue to Test Request
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+      />
+
+      {/* Provider Keys Sheet */}
+      <Sheet open={isProviderSheetOpen} onOpenChange={setIsProviderSheetOpen}>
+        <SheetContent side="right" size="large" className="overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Configure Provider Keys</SheetTitle>
+            <SheetDescription>
+              Add your API keys for different LLM providers to use with Bring
+              Your Own Keys (BYOK)
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-6">
+            <ProviderKeySettings />
+          </div>
+        </SheetContent>
+      </Sheet>
     </OnboardingHeader>
   );
 }

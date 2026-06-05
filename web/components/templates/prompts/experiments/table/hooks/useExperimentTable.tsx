@@ -2,6 +2,7 @@ import { useOrg } from "@/components/layout/org/organizationContext";
 import { getJawnClient } from "../../../../../../lib/clients/jawn";
 import { placeAssetIdValues } from "../../../../../../services/lib/requestTraverseHelper";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { logger } from "@/lib/telemetry/logger";
 
 export type ExperimentTable = {
   id: string;
@@ -46,7 +47,7 @@ type CellStatus = "initialized" | "success" | "running";
 
 export const getRequestDataByIds = async (
   orgId: string,
-  requestIds: string[]
+  requestIds: string[],
 ) => {
   const jawnClient = getJawnClient(orgId);
   const res = await jawnClient.POST("/v1/request/query-ids", {
@@ -68,7 +69,7 @@ export const fetchRequestResponseBody = async (request_response: any) => {
       return content;
     }
   } catch (error) {
-    console.error("Error fetching response body:", error);
+    logger.error({ error }, "Error fetching response body");
   }
   return null;
 };
@@ -130,7 +131,7 @@ export const useExperimentTable = (experimentTableId: string) => {
                 experimentId: experimentTableId,
               },
             },
-          }
+          },
         );
         return res.data?.data;
       },
@@ -150,7 +151,7 @@ export const useExperimentTable = (experimentTableId: string) => {
               experimentId: experimentTableId,
             },
           },
-        }
+        },
       );
       return res.data?.data;
     },
@@ -226,7 +227,7 @@ export const useExperimentTable = (experimentTableId: string) => {
         "/v2/experiment/{experimentId}/row/insert/dataset/{datasetId}",
         {
           params: { path: { experimentId: experimentTableId, datasetId } },
-        }
+        },
       );
     },
     onSuccess: () => {
@@ -253,7 +254,7 @@ export const useExperimentTable = (experimentTableId: string) => {
     onMutate: async (variables) => {
       queryClient.setQueryData(
         ["inputs", variables.inputRecordId],
-        variables.inputs
+        variables.inputs,
       );
     },
   });
@@ -272,7 +273,7 @@ export const useExperimentTable = (experimentTableId: string) => {
         {
           params: { path: { experimentId: experimentTableId } },
           body: { promptVersionId, inputRecordId },
-        }
+        },
       );
 
       return res.data?.data;
@@ -319,7 +320,7 @@ export const useExperimentTable = (experimentTableId: string) => {
           params: {
             path: { experimentId: experimentTableId, promptVersionId },
           },
-        }
+        },
       );
     },
     onSuccess: () => {

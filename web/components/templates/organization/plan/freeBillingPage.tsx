@@ -39,6 +39,7 @@ export const FreePlanCard = () => {
       const invoice = await jawn.GET("/v1/stripe/subscription/free/usage");
       return invoice;
     },
+    enabled: !!org?.currentOrg?.id,
   });
 
   const getBillingCycleDates = () => {
@@ -61,7 +62,7 @@ export const FreePlanCard = () => {
   const [isComparisonOpen, setIsComparisonOpen] = useState(false);
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-5xl px-4 pb-8">
+    <div className="flex w-full max-w-5xl flex-col gap-6 px-4 pb-8">
       <Card className="w-full">
         <CardHeader>
           <div className="flex items-center gap-3">
@@ -71,16 +72,16 @@ export const FreePlanCard = () => {
             </span>
           </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground text-slate-500">
-            <CalendarIcon className="h-4 w-4" />
+        <CardContent className="flex flex-col gap-6">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CalendarIcon size={16} />
             <span>Current billing period: {getBillingCycleDates()}</span>
           </div>
 
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between text-sm">
               <span>Requests used</span>
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 {freeUsage.data?.data?.toLocaleString()} / 10,000
               </span>
             </div>
@@ -92,28 +93,26 @@ export const FreePlanCard = () => {
 
           {/* Plan comparison */}
           <div className="grid gap-6 md:grid-cols-2 lg:max-w-full">
-            <Card className="max-w-[500px] flex flex-col">
+            <Card className="flex max-w-[500px] flex-col">
               <CardHeader>
                 <CardTitle>
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     <h3 className="text-xl font-bold">Pro Plan</h3>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold">$20</span>
-                      <span className="text-sm text-muted-foreground">
-                        /seat/mo
-                      </span>
+                      <span className="text-3xl font-bold">$79</span>
+                      <span className="text-sm text-muted-foreground">/mo</span>
                     </div>
                   </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 space-y-4">
-                <p className="text-sm text-slate-500">
-                  + Optional add-ons starting at $50/mo
+              <CardContent className="flex-1 flex flex-col gap-4">
+                <p className="text-sm text-muted-foreground">
+                  Unlimited seats, tiered usage-based billing
                 </p>
-                <ul className="space-y-2.5">
+                <ul className="flex flex-col gap-2.5">
                   {proFeatures.slice(0, 4).map((feature) => (
                     <li key={feature.title} className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-sky-500" />
+                      <Check size={16} className="text-sky-500" />
                       <span className="text-sm">{feature.title}</span>
                     </li>
                   ))}
@@ -123,7 +122,7 @@ export const FreePlanCard = () => {
                 <Button
                   size="lg"
                   variant="action"
-                  className="w-full bg-sky-500 hover:bg-sky-600 text-white"
+                  className="w-full bg-sky-500 text-white hover:bg-sky-600"
                   onClick={() => setShowUpgradeDialog(true)}
                 >
                   Start 7-day free trial
@@ -131,24 +130,24 @@ export const FreePlanCard = () => {
               </CardFooter>
             </Card>
 
-            <Card className="max-w-[500px] flex flex-col">
+            <Card className="flex max-w-[500px] flex-col">
               <CardHeader>
                 <CardTitle>
-                  <div className="space-y-2">
+                  <div className="flex flex-col gap-2">
                     <h3 className="text-xl font-bold">Team Bundle</h3>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold">$200</span>
+                      <span className="text-3xl font-bold">$799</span>
                       <span className="text-sm text-muted-foreground">/mo</span>
                     </div>
                   </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 space-y-4">
-                <p className="text-sm font-medium">Unlimited seats</p>
-                <ul className="space-y-2.5">
+              <CardContent className="flex-1 flex flex-col gap-4">
+                <p className="text-sm font-medium">Unlimited seats, 5 orgs</p>
+                <ul className="flex flex-col gap-2.5">
                   {teamBundleFeatures.map((feature) => (
                     <li key={feature} className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-sky-500" />
+                      <Check size={16} className="text-sky-500" />
                       <span className="text-sm">{feature}</span>
                     </li>
                   ))}
@@ -182,20 +181,20 @@ export const FreePlanCard = () => {
               <CardTitle>Complete Pro Features</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg p-6 bg-background border">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="rounded-lg border bg-background p-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {proFeatures.map((feature, index) => (
                     <div
                       key={index}
-                      className="p-4 rounded-lg hover:bg-muted/5 transition-colors group"
+                      className="group rounded-lg p-4 transition-colors hover:bg-muted/5"
                     >
                       <div className="flex gap-3">
-                        <Check className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                        <Check size={20} className="mt-0.5 flex-shrink-0 text-primary" />
                         <div>
-                          <h4 className="font-medium text-sm group-hover:text-primary transition-colors">
+                          <h4 className="text-sm font-medium transition-colors group-hover:text-primary">
                             {feature.title}
                           </h4>
-                          <p className="text-sm text-slate-500 mt-1">
+                          <p className="mt-1 text-sm text-muted-foreground">
                             {feature.description}
                           </p>
                         </div>
@@ -208,20 +207,20 @@ export const FreePlanCard = () => {
           </Card>
         </CollapsibleContent>
 
-        <div className="flex justify-center mt-4">
+        <div className="mt-4 flex justify-center">
           <CollapsibleTrigger asChild>
             <Button
               variant="ghost"
-              className="text-slate-500 hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
             >
               {isComparisonOpen ? (
                 <>
-                  <ChevronUpIcon className="h-4 w-4 mr-2" />
+                  <ChevronUpIcon size={16} className="mr-2" />
                   Show fewer features
                 </>
               ) : (
                 <>
-                  <ChevronDownIcon className="h-4 w-4 mr-2" />
+                  <ChevronDownIcon size={16} className="mr-2" />
                   See all Pro features
                 </>
               )}
@@ -232,14 +231,14 @@ export const FreePlanCard = () => {
 
       {/* Additional Options */}
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="flex flex-col h-full">
+        <Card className="flex h-full flex-col">
           <CardHeader className="space-y-1.5">
             <CardTitle className="text-2xl font-semibold">
               Learn about our Enterprise plan
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               Built for companies looking to scale. Includes everything in Pro,
-              plus unlimited requests, prompts, experiments and more.
+              plus unlimited requests, dedicated support and more.
             </p>
           </CardHeader>
           <CardFooter className="mt-auto">
@@ -255,7 +254,7 @@ export const FreePlanCard = () => {
           </CardFooter>
         </Card>
 
-        <Card className="flex flex-col h-full">
+        <Card className="flex h-full flex-col">
           <CardHeader className="space-y-1.5">
             <CardTitle className="text-2xl font-semibold">
               Looking for something else?
@@ -288,8 +287,16 @@ export const FreePlanCard = () => {
 
 const proFeatures = [
   {
-    title: "Unlimited scaling",
+    title: "Unlimited seats",
+    description: "Add your whole team at no extra cost",
+  },
+  {
+    title: "Unlimited requests",
     description: "Scale your requests without limits",
+  },
+  {
+    title: "Usage-based billing",
+    description: "Tiered GB + request pricing - costs decrease as you scale",
   },
   {
     title: "Sessions",
@@ -300,55 +307,38 @@ const proFeatures = [
     description: "Test your prompts with different models",
   },
   {
-    title: "User Tracking",
-    description: "Keep track of your users",
-  },
-  {
-    title: "Rate Limits",
-    description: "Limit your user's usage",
-  },
-  {
-    title: "Datasets",
-    description: "Collect historical requests for training and finetuning",
-  },
-  {
-    title: "API Access",
-    description: "Access to 60 calls/min using our expansive API",
-  },
-  {
-    title: "3 month log retention",
-    description: "Longer log retention compared to 1 month",
-  },
-  {
-    title: "Caching",
-    description: "Cache frequent responses to save costs and time",
-  },
-  {
-    title: "SOC-2 Type II Compliance",
-    description: "Safety and privacy",
-  },
-  {
-    title: "Alerts",
-    description: "Get notified via Slack + Email",
-  },
-  {
-    title: "Prompts (Optional Add-on)",
+    title: "Prompts",
     description: "Manage and version your prompts",
   },
   {
-    title: "Experiments (Optional Add-on)",
-    description: "Run and track experiments",
+    title: "HQL & Alerts",
+    description: "Query language and notifications",
   },
   {
-    title: "Evals (Optional Add-on)",
-    description: "Evaluate model performance",
+    title: "API Access",
+    description: "Access to 10 calls/min using our API",
+  },
+  {
+    title: "1 month log retention",
+    description: "Store your logs for 30 days",
+  },
+  {
+    title: "Caching & Rate Limits",
+    description: "Gateway features included",
+  },
+  {
+    title: "Webhooks",
+    description: "Connect to external services",
+  },
+  {
+    title: "Chat & Email Support",
+    description: "Get help when you need it",
   },
 ];
 
 const teamBundleFeatures = [
-  "Unlimited seats",
-  "Everything in Pro plan",
-  "Prompts included",
-  "Experiments included",
-  "Evals included",
+  "Everything in Pro",
+  "SOC-2 & HIPAA compliance",
+  "Dedicated Slack channel",
+  "Support engineer & SLAs",
 ];

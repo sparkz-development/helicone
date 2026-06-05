@@ -1,6 +1,7 @@
 import AuthLayout from "@/components/layout/auth/authLayout";
 import { Button } from "@/components/ui/button";
 import { dbExecute } from "@/lib/api/db/dbExecute";
+import { logger } from "@/lib/telemetry/logger";
 import { GetServerSidePropsContext } from "next";
 import Link from "next/link";
 import { ReactElement } from "react";
@@ -23,7 +24,7 @@ SlackRedirect.getLayout = function getLayout(page: ReactElement) {
 };
 
 export const getServerSideProps = async (
-  context: GetServerSidePropsContext
+  context: GetServerSidePropsContext,
 ) => {
   const { code, state } = context.query;
   const host = context.req.headers.host;
@@ -41,7 +42,7 @@ export const getServerSideProps = async (
     SELECT id FROM organization
     WHERE id = $1
     `,
-    [state]
+    [state],
   );
 
   if (error) {
@@ -89,7 +90,12 @@ export const getServerSideProps = async (
     if (data.ok) {
       responseData = data;
     } else {
-      console.error("Failed to get access token", data);
+      logger.error(
+        {
+          data,
+        },
+        "Failed to get access token",
+      );
       return {
         props: {
           error: "Failed to get access token",
@@ -97,7 +103,12 @@ export const getServerSideProps = async (
       };
     }
   } catch (error) {
-    console.error("Failed to get access token", error);
+    logger.error(
+      {
+        error,
+      },
+      "Failed to get access token",
+    );
     return {
       props: {
         error: "Failed to get access token",
@@ -105,7 +116,7 @@ export const getServerSideProps = async (
     };
   }
 
-  const { data: slackData, error: slackError } = await dbExecute<{
+  const { error: slackError } = await dbExecute<{
     id: string;
   }>(
     `
@@ -120,7 +131,7 @@ export const getServerSideProps = async (
         team_id: responseData.team.id,
         access_token: responseData.access_token,
       },
-    ]
+    ],
   );
 
   if (slackError) {

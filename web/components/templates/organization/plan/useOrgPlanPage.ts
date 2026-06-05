@@ -33,7 +33,7 @@ const useOrgPlanPage = ({
       key: "rateLimitsOverTime",
       postProcess: (data) => {
         return resultMap(data, (d) =>
-          d.map((d) => ({ count: +d.count, time: new Date(d.time) }))
+          d.map((d) => ({ count: +d.count, time: new Date(d.time) })),
         );
       },
     }),
@@ -51,8 +51,8 @@ const useOrgPlanPage = ({
     return x.isLoading || x.isFetching;
   }
 
-  const isAnyLoading = false;
-  Object.values(overTimeData).some(isLoading) ||
+  const isAnyLoading =
+    Object.values(overTimeData).some(isLoading) ||
     Object.values(metrics).some(isLoading);
 
   return {

@@ -3,8 +3,6 @@ import { AnthropicSettings } from "./AnthropicSettings";
 import { AzureSettings } from "./AzureSettings";
 import { OpenAISettings } from "./OpenAISettings";
 import { OpenRouterSettings } from "./OpenRouterSettings";
-interface AdminOnPremPageProps {}
-
 export interface AzureExperiment {
   azureBaseUri: string;
   azureApiVersion: string;
@@ -12,11 +10,11 @@ export interface AzureExperiment {
   azureApiKey: string;
 }
 
-export const AdminOnPremPage = (props: AdminOnPremPageProps) => {
+export const AdminOnPremPage = () => {
   return (
     <div className="flex flex-col space-y-4 p-6">
       <h1 className="text-2xl font-semibold">On Prem Settings</h1>
-      <div className="flex flex-col space-y-8 max-w-4xl">
+      <div className="flex max-w-4xl flex-col space-y-8">
         <Tabs defaultValue="azure" className="w-full">
           <TabsList>
             <TabsTrigger value="azure">Azure</TabsTrigger>

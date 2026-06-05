@@ -53,7 +53,6 @@ async function getProviderResponse(
       return await callProvider(callProps);
     }
   } catch (e) {
-
     if (e instanceof Error) {
       if (e.message.includes("Network connection lost")) {
         return new Response(
@@ -63,11 +62,10 @@ async function getProviderResponse(
             "helicone-message": "Unable to connect to the provider",
             support:
               "Please reach out on our discord or email us at help@helicone.ai, we'd love to help!",
-            "error-trace": "" + e.message + " " + e.name + " " + e.stack,
           }),
           {
             status: 502, // Bad Gateway
-            headers: { "content-type": "application/json" }
+            headers: { "content-type": "application/json" },
           }
         );
       }
@@ -80,22 +78,24 @@ async function getProviderResponse(
             "helicone-message": "The request to the provider timed out",
             support:
               "Please reach out on our discord or email us at help@helicone.ai, we'd love to help!",
-            "error-trace": "" + e.message + " " + e.name + " " + e.stack,
           }),
           {
             status: 504, // Gateway Timeout
-            headers: { "content-type": "application/json" }
+            headers: { "content-type": "application/json" },
           }
         );
       }
     }
-    return new Response(JSON.stringify({
-      error: "Unknown error",
-      message: "An unknown error occurred",
-      "helicone-message": "An unknown error occurred",
-      support: "Please reach out on our discord or email us at help@helicone.ai, we'd love to help!",
-      "error-trace": JSON.stringify(e),
-    }), { status: 500, headers: { "content-type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        error: "Unknown error",
+        message: "An unknown error occurred",
+        "helicone-message": "An unknown error occurred",
+        support:
+          "Please reach out on our discord or email us at help@helicone.ai, we'd love to help!",
+      }),
+      { status: 500, headers: { "content-type": "application/json" } }
+    );
   }
 }
 
@@ -115,7 +115,11 @@ export async function handleProxyRequest(
   );
 
   const interceptor = response.body
-    ? new ReadableInterceptor(response.body, proxyRequest.isStream)
+    ? new ReadableInterceptor(
+        response.body,
+        proxyRequest.isStream,
+        proxyRequest.requestWrapper.getDataDogClient()
+      )
     : null;
   let body = interceptor ? interceptor.stream : null;
 
@@ -148,6 +152,20 @@ export async function handleProxyRequest(
   responseHeaders.set("Helicone-Status", "success");
   responseHeaders.set("Helicone-Id", proxyRequest.requestId);
 
+  // Add AI Gateway specific headers if this is a gateway request
+  const gatewayAttempt = proxyRequest.requestWrapper.getGatewayAttempt();
+  if (gatewayAttempt) {
+    responseHeaders.set(
+      "Helicone-Gateway-Mode",
+      gatewayAttempt.authType.toUpperCase()
+    );
+    responseHeaders.set("Helicone-Provider", gatewayAttempt.endpoint.provider);
+    responseHeaders.set(
+      "Helicone-Model",
+      gatewayAttempt.endpoint.providerModelId
+    );
+  }
+
   let status = response.status;
   if (status < 200 || status >= 600) {
     console.error("Invalid status code: ", status);
@@ -170,7 +188,7 @@ export async function handleProxyRequest(
             body: (await interceptor?.waitForStream())?.body ?? [],
             endTime: new Date(
               (await interceptor?.waitForStream())?.endTimeUnix ??
-              new Date().getTime()
+                new Date().getTime()
             ),
           }),
           responseHeaders: new Headers(response.headers),

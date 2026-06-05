@@ -1,8 +1,10 @@
 import { betterAuth } from "better-auth";
+import { customSession } from "better-auth/plugins";
 import { fromNodeHeaders } from "better-auth/node";
 import { Pool } from "pg";
 import { Database } from "../../../../lib/db/database.types";
 import { dbExecute } from "../../../../lib/shared/db/dbExecute";
+import { SecretManager } from "@helicone-package/secrets/SecretManager";
 import {
   GenericHeaders,
   HeliconeAuthClient,
@@ -21,14 +23,43 @@ import { authenticateBearer } from "./common";
 
 export const betterAuthClient = betterAuth({
   database: new Pool({
-    connectionString: process.env.SUPABASE_DATABASE_URL,
+    connectionString: SecretManager.getSecret(
+      "SUPABASE_DATABASE_URL", // TODO remove supabase URL eventually
+      "DATABASE_URL"
+    ),
   }),
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: false,
+  },
   logger: {
     log: (message: string) => {
       console.log(message);
     },
   },
+  trustedOrigins: [process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3008"],
+  plugins: [
+    customSession(async ({ user, session }) => {
+      const dbUser = await getUserByBetterAuthId(user.id);
+      if (dbUser.error || !dbUser.data) {
+        console.warn("could not fetch authUserId from db");
+        return {
+          user,
+          session,
+        };
+      }
+
+      return {
+        user: {
+          authUserId: dbUser.data.id,
+          ...user,
+        },
+        session,
+      };
+    }),
+  ],
 });
+
 export class BetterAuthWrapper implements HeliconeAuthClient {
   constructor() {}
 
@@ -70,8 +101,28 @@ export class BetterAuthWrapper implements HeliconeAuthClient {
   async getUserById(userId: string): HeliconeUserResult {
     throw new Error("Not implemented");
   }
+
   async getUserByEmail(email: string): HeliconeUserResult {
-    throw new Error("Not implemented");
+    const user = await dbExecute<{
+      user_id: string;
+      email: string;
+    }>(
+      `SELECT 
+        public.user.auth_user_id as user_id, 
+        public.user.email
+      FROM public.user
+      LEFT JOIN auth.users on public.user.auth_user_id = auth.users.id
+      WHERE public.user.email = $1`,
+      [email],
+    );
+    if (!user || !user.data?.[0]) {
+      return err("User not found");
+    }
+
+    return ok({
+      id: user.data?.[0]?.user_id,
+      email: user.data?.[0]?.email,
+    });
   }
 
   async authenticate(
@@ -107,6 +158,7 @@ export class BetterAuthWrapper implements HeliconeAuthClient {
         userId: user.data?.id,
         organizationId: org?.data?.[0]?.id ?? "",
         role: org?.data?.[0]?.role ?? "member",
+        tier: org?.data?.[0]?.tier ?? "free",
       });
     } else if (auth._type === "bearer") {
       return authenticateBearer(auth.token);
@@ -138,6 +190,10 @@ limit 1
       id: org?.data?.[0]?.id ?? "",
       percentLog: org?.data?.[0]?.percent_to_log ?? 100_000,
       has_onboarded: org?.data?.[0]?.has_onboarded ?? false,
+      has_integrated: org?.data?.[0]?.has_integrated ?? false,
+      freeLimitExceeded:
+        (org?.data?.[0] as { free_limit_exceeded?: string | null })
+          ?.free_limit_exceeded ?? null,
     };
 
     return ok(orgResult);
@@ -158,6 +214,50 @@ limit 1
     password?: string;
     otp?: boolean;
   }): HeliconeUserResult {
-    throw new Error("Not implemented");
+    try {
+      const result = await betterAuthClient.api.signUpEmail({
+        body: {
+          email: email,
+          password: password ?? "",
+          name: "",
+        },
+      });
+      if (result.user) {
+        // the ID returned from signUpEmail is not a UUID, so we need to get the user by email
+        const getUserResult = await this.getUserByEmail(email);
+        return ok({
+          id: getUserResult.data?.id ?? "",
+          email: getUserResult.data?.email ?? "",
+        });
+      }
+
+      return err("Signup process outcome unclear. Check verification steps.");
+    } catch (error: any) {
+      console.error(error.message || "Better Auth sign up error");
+      return err(error.message || "Sign up failed");
+    }
   }
+}
+
+async function getUserByBetterAuthId(userId: string): HeliconeUserResult {
+  const user = await dbExecute<{
+    user_id: string;
+    email: string;
+  }>(
+    `SELECT 
+      public.user.auth_user_id as user_id, 
+      public.user.email
+    FROM public.user
+    LEFT JOIN auth.users on public.user.auth_user_id = auth.users.id
+    WHERE public.user.id = $1`,
+    [userId],
+  );
+  if (!user || !user.data?.[0]) {
+    return err("User not found");
+  }
+
+  return ok({
+    id: user.data?.[0]?.user_id,
+    email: user.data?.[0]?.email,
+  });
 }

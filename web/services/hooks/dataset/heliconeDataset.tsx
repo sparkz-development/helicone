@@ -8,12 +8,13 @@ import { useState, useEffect, useMemo } from "react";
 import { useOrg } from "../../../components/layout/org/organizationContext";
 import { getJawnClient } from "../../../lib/clients/jawn";
 import { toast } from "sonner";
+import { logger } from "@/lib/telemetry/logger";
 
 const fetchHeliconeDatasetRows = async (
   orgId: string,
   datasetId: string,
   page: number,
-  pageSize: number
+  pageSize: number,
 ) => {
   const jawn = getJawnClient(orgId);
   const response = await jawn.POST(`/v1/helicone-dataset/{datasetId}/query`, {
@@ -51,7 +52,7 @@ const fetchHeliconeDatasetRows = async (
             request_body = content?.request ?? "";
             response_body = content?.response ?? "";
           } catch (error) {
-            console.error("Error fetching signed URL:", error);
+            logger.error({ error }, "Error fetching signed URL");
           }
         }
       }
@@ -61,7 +62,7 @@ const fetchHeliconeDatasetRows = async (
         request_body,
         response_body,
       };
-    })
+    }),
   );
 
   return rowsWithBodies;
@@ -110,7 +111,7 @@ type NotNullAndUndefined<T> = NotNull<NotUndefined<T>>;
 const useGetHeliconeDatasetRows = (
   id: string,
   currentPage: number,
-  currentPageSize: number
+  currentPageSize: number,
 ) => {
   const org = useOrg();
   const [rows, setRows] = useState<any[]>([]);
@@ -289,7 +290,7 @@ const useDeleteHeliconeDataset = () => {
               datasetId,
             },
           },
-        }
+        },
       );
 
       if (!response.data) {
@@ -305,7 +306,7 @@ const useDeleteHeliconeDataset = () => {
       toast.error(
         `Failed to delete dataset: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     },
   });

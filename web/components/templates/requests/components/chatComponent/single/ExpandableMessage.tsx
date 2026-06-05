@@ -6,6 +6,7 @@ import { RenderWithPrettyInputKeys } from "../../../../playground/chatRow";
 import { Col } from "../../../../../layout/common";
 import MarkdownEditor from "../../../../../shared/markdownEditor";
 import { PROMPT_MODES } from "../chatTopBar";
+import { logger } from "@/lib/telemetry/logger";
 
 interface ExpandableMessageProps {
   formattedMessageContent: string;
@@ -39,7 +40,10 @@ export const ExpandableMessage: React.FC<ExpandableMessageProps> = ({
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        console.log("New scroll height:", entry.target.scrollHeight);
+        logger.debug(
+          { scrollHeight: entry.target.scrollHeight },
+          "New scroll height",
+        );
         if (
           entry.target.scrollHeight > (parentRef.current?.clientHeight ?? 0)
         ) {
@@ -73,7 +77,7 @@ export const ExpandableMessage: React.FC<ExpandableMessageProps> = ({
 
   if (formattedMessageContent.length > 2_000_000) {
     return (
-      <div className="text-red-500 font-normal">
+      <div className="font-normal text-red-500">
         Too long to display (Length = {formattedMessageContent.length})
       </div>
     );
@@ -84,7 +88,7 @@ export const ExpandableMessage: React.FC<ExpandableMessageProps> = ({
       <div
         className={clsx(
           expandFormat ? "truncate-text" : "",
-          "leading-6 pb-2 max-w-full transition-all"
+          "max-w-full pb-2 leading-6 transition-all",
         )}
         style={{ maxHeight: expanded ? "none" : "10.5rem" }}
       >
@@ -106,12 +110,12 @@ export const ExpandableMessage: React.FC<ExpandableMessageProps> = ({
       </div>
 
       {showButton && (
-        <div className="w-full flex justify-center items-center pt-2 pr-24">
+        <div className="flex w-full items-center justify-center pr-24 pt-2">
           <button onClick={handleToggle}>
             <ChevronDownIcon
               className={clsx(
-                "rounded-full border text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-700 h-7 w-7 p-1.5",
-                expanded && "transition-transform rotate-180"
+                "h-7 w-7 rounded-full border border-gray-300 p-1.5 text-gray-900 dark:border-gray-700 dark:text-gray-100",
+                expanded && "rotate-180 transition-transform",
               )}
             />
           </button>

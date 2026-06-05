@@ -26,10 +26,8 @@ const BreadcrumbSeparator = () => (
 
 export const STEP_ROUTES: Record<OnboardingStep, string> = {
   ORGANIZATION: "/onboarding",
-  MEMBERS: "/onboarding",
   BILLING: "/onboarding/billing",
-  INTEGRATION: "/onboarding/integrate",
-  EVENT: "/onboarding/event",
+  REQUEST: "/onboarding/request",
 };
 
 interface OnboardingHeaderProps {
@@ -55,27 +53,13 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
     }
   }, [org?.currentOrg?.has_onboarded, isLoading, router]);
 
-  const billingStep: { label: string; step: OnboardingStep }[] =
-    draftPlan !== "free" ? [{ label: "Add billing", step: "BILLING" }] : [];
-
-  const isCreatingOrg =
-    onboardingState?.currentStep === "ORGANIZATION" ||
-    onboardingState?.currentStep === "MEMBERS";
-
   const steps: { label: string; step: OnboardingStep }[] = [
-    {
-      label: "Create an organization",
-      step: isCreatingOrg
-        ? (onboardingState?.currentStep as OnboardingStep)
-        : "ORGANIZATION",
-    },
-    ...billingStep,
-    { label: "Get integrated", step: "INTEGRATION" },
-    { label: "Send an event", step: "EVENT" },
+    { label: "Create organization", step: "ORGANIZATION" },
+    { label: "Send a request", step: "REQUEST" },
   ];
 
   const currentStepIndex = steps.findIndex(
-    (s) => s.step === onboardingState?.currentStep
+    (s) => s.step === onboardingState?.currentStep,
   );
 
   const handleStepClick = async (step: OnboardingStep, index: number) => {
@@ -97,8 +81,8 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
 
   if (isLoading || !org?.currentOrg?.id || org?.currentOrg?.has_onboarded) {
     return (
-      <div className="min-h-screen w-full flex flex-col">
-        <div className="flex-1 flex items-center justify-center">
+      <div className="flex min-h-dvh w-full flex-col">
+        <div className="flex flex-1 items-center justify-center">
           <LoadingAnimation />
         </div>
       </div>
@@ -106,9 +90,9 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-[hsl(var(--background))]">
-      <header className="w-full h-14 px-4 sm:px-6 bg-[hsl(var(--background))] border-b border-[hsl(var(--border))] flex items-center justify-between">
-        <div className="flex items-center gap-4 overflow-x-auto min-w-0 pr-2 md:pr-0">
+    <div className="flex min-h-dvh w-full flex-col bg-[hsl(var(--background))]">
+      <header className="flex h-14 w-full items-center justify-between border-b border-[hsl(var(--border))] bg-[hsl(var(--background))] px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-4 overflow-x-auto pr-2 md:pr-0">
           <div className="flex-shrink-0">
             <Image
               src="/static/helicone-icon.svg"
@@ -124,12 +108,12 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
               <React.Fragment key={step.label}>
                 <span
                   className={cn(
-                    "text-sm font-normal flex-shrink-0",
+                    "flex-shrink-0 text-sm font-normal",
                     onboardingState?.currentStep === step.step
                       ? "text-[hsl(var(--foreground))]"
                       : "text-[hsl(var(--muted-foreground))]",
                     index < currentStepIndex &&
-                      "hover:text-[hsl(var(--foreground))]"
+                      "hover:text-[hsl(var(--foreground))]",
                   )}
                   onClick={() => {
                     if (index < currentStepIndex) {
@@ -143,7 +127,7 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
                   {step.label}
                 </span>
                 {index < steps.length - 1 && (
-                  <ChevronRightIcon className="w-4 h-4 text-[hsl(var(--muted-foreground))] flex-shrink-0" />
+                  <ChevronRightIcon className="h-4 w-4 flex-shrink-0 text-[hsl(var(--muted-foreground))]" />
                 )}
               </React.Fragment>
             ))}
@@ -153,11 +137,11 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
         <div className="flex items-center gap-4">
           <button
             onClick={handleSignOut}
-            className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] flex items-center gap-1 flex-shrink-0"
+            className="flex flex-shrink-0 items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
             aria-label="Sign Out"
           >
             <span className="hidden sm:inline">Sign Out</span>
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={handleThemeChange}
@@ -168,7 +152,7 @@ export const OnboardingHeader = ({ children }: OnboardingHeaderProps) => {
           </button>
         </div>
       </header>
-      {children}
+      <main className="flex flex-1">{children}</main>
     </div>
   );
 };

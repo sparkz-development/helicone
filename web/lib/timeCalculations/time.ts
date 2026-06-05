@@ -16,9 +16,12 @@ export function getTimeIntervalAgo(interval: TimeInterval): Date {
     case "1h":
       return new Date(now.setHours(now.getHours() - 1));
     case "all":
-      return new Date(0);
+      // Use 1 year ago instead of epoch (1970) to avoid full table scans
+      // on large organizations with millions of requests
+      return new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
     default:
-      return new Date(0);
+      // Default to 1 month ago for safety
+      return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   }
 }
 
@@ -63,8 +66,8 @@ export function timeBackfill<T, K>(
   data: (T & { created_at_trunc: Date })[],
   start: Date,
   end: Date,
-  reducer: (acc: K, d: T) => K,
-  initial: K
+  reducer: (_acc: K, _d: T) => K,
+  initial: K,
 ): (K & { time: Date })[] {
   const result: (K & { time: Date })[] = [];
   let current = start;
@@ -77,7 +80,7 @@ export function timeBackfill<T, K>(
     const initialClone = { ...initial };
     const val = data
       .filter(
-        (d) => d.created_at_trunc >= current && d.created_at_trunc < nextTime
+        (d) => d.created_at_trunc >= current && d.created_at_trunc < nextTime,
       )
       .reduce((acc, d) => reducer(acc, d), initialClone);
 
@@ -96,9 +99,11 @@ export const getTimeInterval = ({
 }): TimeIncrement => {
   const diff = end.getTime() - start.getTime();
 
-  if (diff < 1000 * 60 * 60 * 2) {
+  if (diff < 1000 * 60 * 60 * 6) {
+    // Use minute granularity for ranges up to 6 hours
     return "min";
-  } else if (diff < 1000 * 60 * 60 * 24 * 7) {
+  } else if (diff < 1000 * 60 * 60 * 24 * 3) {
+    // Use hourly granularity for ranges up to 3 days
     return "hour";
   } else {
     return "day";

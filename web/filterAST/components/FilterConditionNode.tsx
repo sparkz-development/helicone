@@ -1,6 +1,6 @@
 import React from "react";
-import { ConditionExpression, FilterOperator } from "../filterAst";
-import { useFilterStore } from "../store/filterStore";
+import { ConditionExpression, FilterOperator } from "@helicone-package/filters/types";
+import { useFilterAST } from "../context/filterContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronDown, Trash2, Loader2 } from "lucide-react";
@@ -19,6 +19,7 @@ import { useFilterUIDefinitions } from "../filterUIDefinitions/useFilterUIDefini
 import clsx from "clsx";
 import { Small } from "@/components/ui/typography";
 import DateTimeInput from "./ui/DateTimeInput";
+import { logger } from "@/lib/telemetry/logger";
 
 // Define the FILTER_OPERATOR_LABELS mapping
 const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
@@ -32,6 +33,7 @@ const FILTER_OPERATOR_LABELS: Record<FilterOperator, string> = {
   like: "~",
   ilike: "≈",
   contains: "⊃",
+  "not-contains": "⊅",
   in: "∈",
 };
 
@@ -47,6 +49,7 @@ const FILTER_OPERATOR_DESCRIPTIVE_LABELS: Record<FilterOperator, string> = {
   like: "Like (~)",
   ilike: "Case Insensitive Like (≈)",
   contains: "Contains (⊃)",
+  "not-contains": "Not Contains (⊅)",
   in: "In (∈)",
 };
 
@@ -65,50 +68,26 @@ const NumberInput: React.FC<{
   className = "",
 }) => {
   const [open, setOpen] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState(value.toString());
   const containerRef = React.useRef<HTMLDivElement>(null);
 
-  // Format display value to remove leading zeros but preserve decimals
-  const formatDisplayValue = (val: string | number): string => {
-    if (val === 0 || val === "0") return "0";
-
-    if (typeof val === "string") {
-      // If it's a string with leading zeros (not a decimal)
-      if (val.startsWith("0") && val.length > 1 && val[1] !== ".") {
-        return parseFloat(val).toString();
-      }
-    }
-    return val.toString();
-  };
+  React.useEffect(() => {
+    setInputValue(value.toString());
+  }, [value]);
 
   // Handle direct input changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputValue = e.target.value;
+    const newValue = e.target.value;
+    setInputValue(newValue);
 
     // For empty input, use 0
-    if (inputValue === "") {
+    if (newValue === "") {
       onValueChange(0);
       return;
     }
 
-    // If it has leading zeros (but is not a decimal), remove them
-    if (
-      inputValue.startsWith("0") &&
-      inputValue.length > 1 &&
-      inputValue[1] !== "."
-    ) {
-      const cleanValue = inputValue.replace(/^0+/, "");
-      const numericValue = Number(cleanValue);
-      if (!isNaN(numericValue)) {
-        onValueChange(numericValue);
-      }
-      return;
-    }
-
-    // Parse the input as a number
-    const numericValue = Number(inputValue);
-
-    // Only update if it's a valid number
-    if (!isNaN(numericValue)) {
+    const numericValue = Number(newValue);
+    if (!isNaN(numericValue) && newValue !== "" && !newValue.endsWith('.')) {
       onValueChange(numericValue);
     }
   };
@@ -146,17 +125,17 @@ const NumberInput: React.FC<{
     <div className="relative w-full" ref={containerRef}>
       <div className="flex">
         <Input
-          type="number"
-          value={formatDisplayValue(value)}
+          type="text"
+          value={inputValue}
           onChange={handleInputChange}
           disabled={disabled}
-          className={`w-full h-7 text-[10px] ${className}`}
+          className={`h-7 w-full text-[10px] ${className}`}
         />
         {selectOptions.length > 0 && (
           <ChevronDown
             className={clsx(
               "absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer transition-transform",
-              open && "rotate-180"
+              open && "rotate-180",
             )}
             size={10}
             onClick={toggleDropdown}
@@ -164,11 +143,11 @@ const NumberInput: React.FC<{
         )}
       </div>
       {open && selectOptions.length > 0 && (
-        <div className="absolute w-full top-8 left-0 z-10 bg-white dark:bg-slate-950 border border-border shadow-md max-h-[200px] overflow-y-auto">
+        <div className="absolute left-0 top-8 z-10 max-h-[200px] w-full overflow-y-auto border border-border bg-white shadow-md dark:bg-slate-950">
           {selectOptions.map((option) => (
             <div
               key={option.value}
-              className="px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-[10px]"
+              className="cursor-pointer px-2 py-1.5 text-[10px] hover:bg-slate-100 dark:hover:bg-slate-800"
               onClick={() => {
                 onValueChange(Number(option.value));
                 setOpen(false);
@@ -196,7 +175,7 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
   isFirst = false,
   isLast = false,
 }) => {
-  const filterStore = useFilterStore();
+  const { store: filterStore } = useFilterAST();
   const { filterDefinitions: filterDefs, isLoading } = useFilterUIDefinitions();
 
   // Handle changing a field in a condition
@@ -222,11 +201,20 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
     // Create updated condition with new field and default operator
     const updated: ConditionExpression = {
       ...condition,
-      field: {
-        column: fieldId as any, // Use 'any' to bypass type checking temporarily
-        subtype: filterDef.subType,
-        table: filterDef.table,
-      },
+      field:
+        filterDef.subType === "property"
+          ? {
+              column: "properties" as any,
+              subtype: "property",
+              valueMode: "value",
+              key: fieldId,
+              table: filterDef.table,
+            }
+          : {
+              column: fieldId as any,
+              subtype: filterDef.subType,
+              table: filterDef.table,
+            },
       operator: defaultOperator,
       value: defaultValue, // Reset value since field changed
     };
@@ -261,7 +249,12 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
   };
 
   // Find the filter definition for this field
-  const filterDef = filterDefs.find((def) => def.id === condition.field.column);
+  // For property fields, the property name is stored in `key`, not `column`
+  const filterDef = filterDefs.find((def) =>
+    condition.field.subtype === "property" && condition.field.key
+      ? def.id === condition.field.key
+      : def.id === condition.field.column
+  );
 
   // Get available operators
   const operators = filterDef?.operators || [];
@@ -287,12 +280,12 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
     (opt) => ({
       label: opt.label,
       value: String(opt.value),
-    })
+    }),
   );
 
   // Handle search function for searchable fields
   const handleSearch = async (
-    searchTerm: string
+    searchTerm: string,
   ): Promise<SearchableInputOption[]> => {
     if (!filterDef?.onSearch) return [];
 
@@ -304,14 +297,14 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
         value: String(result.value),
       }));
     } catch (error) {
-      console.error("Error searching:", error);
+      logger.error({ error }, "Error searching");
       return [];
     }
   };
   if (isLoading) {
     return (
-      <div className="p-2 border border-border bg-accent rounded-md flex items-center gap-2">
-        <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+      <div className="flex items-center gap-2 rounded-md border border-border bg-accent p-2">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         <Small className="text-muted-foreground">
           Loading filter options...
         </Small>
@@ -320,10 +313,10 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
   }
   if (!filterDef) {
     return (
-      <div className="p-2 border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 flex items-center justify-between">
+      <div className="flex items-center justify-between border border-amber-300 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-950">
         <div className="flex flex-col">
-          <span className="text-xs text-amber-800 dark:text-amber-300 font-medium">
-            Invalid field: &quot;{condition.field.column || "empty"}&quot;
+          <span className="text-xs font-medium text-amber-800 dark:text-amber-300">
+            Invalid field: &quot;{condition.field.key || condition.field.column || "empty"}&quot;
           </span>
           <span className="text-[10px] text-amber-600 dark:text-amber-400">
             Please select a valid field or remove
@@ -331,10 +324,11 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
         </div>
 
         <Button
+          type="button"
           variant="ghost"
           size="icon"
           onClick={handleRemove}
-          className="border h-6 w-6 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900"
+          className="h-6 w-6 border text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900"
         >
           <Trash2 size={12} />
         </Button>
@@ -364,7 +358,7 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
           onValueChange={(val) => handleValueChange(val)}
           suggestions={valueOptions as { label: string; value: number }[]}
           disabled={!condition.field.column || !condition.operator}
-          className="w-full border-none focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none"
+          className="w-full rounded-none border-none focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
         />
       );
     }
@@ -387,7 +381,7 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
           placeholder="Type to search..."
           emptyMessage="No results found"
           disabled={!condition.field.column || !condition.operator}
-          className="w-full h-7 border-none focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none"
+          className="h-7 w-full rounded-none border-none focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
         />
       );
     }
@@ -403,7 +397,7 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
           searchPlaceholder="Search value..."
           emptyMessage="No value found."
           disabled={!condition.field.column || !condition.operator}
-          className="w-full h-7 text-[10px] focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none"
+          className="h-7 w-full rounded-none text-[10px] focus-visible:ring-0 focus-visible:ring-offset-0"
         />
       );
     }
@@ -415,7 +409,7 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
         onChange={(e) => handleValueChange(e.target.value)}
         disabled={!condition.field.column || !condition.operator}
         placeholder="Enter value"
-        className="w-full h-7 text-[10px] focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none"
+        className="h-7 w-full rounded-none text-[10px] focus-visible:ring-0 focus-visible:ring-offset-0"
       />
     );
   };
@@ -425,19 +419,19 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
       className={clsx(
         "flex flex-row items-center border bg-slate-100 dark:bg-slate-950",
         isFirst && "rounded-t-md",
-        isLast && "rounded-b-md"
+        isLast && "rounded-b-md",
       )}
     >
       <SearchableSelect
         options={fieldOptions}
-        value={condition.field.column}
+        value={condition.field.subtype === "property" && condition.field.key ? condition.field.key : condition.field.column}
         onValueChange={handleFieldChange}
         placeholder="Select field"
         searchPlaceholder="Search field..."
         emptyMessage="No field found."
         width="200px"
         className={clsx(
-          "flex-shrink-0 h-7 text-[10px] border-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent rounded-none"
+          "h-7 flex-shrink-0 rounded-none border-none bg-transparent text-[10px] focus-visible:ring-0 focus-visible:ring-offset-0",
         )}
       />
       <Select
@@ -445,7 +439,7 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
         onValueChange={handleOperatorChange}
         disabled={!condition.field.column}
       >
-        <SelectTrigger className="w-[40px] h-7 px-1 flex-shrink-0 text-center text-[10px] font-normal border-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none bg-transparent rounded-l-none">
+        <SelectTrigger className="h-7 w-[40px] flex-shrink-0 rounded-none rounded-l-none border-none bg-transparent px-1 text-center text-[10px] font-normal focus-visible:ring-0 focus-visible:ring-offset-0">
           <SelectValue placeholder="Op">
             {condition.operator &&
               FILTER_OPERATOR_LABELS[condition.operator as FilterOperator]}
@@ -466,10 +460,11 @@ export const FilterConditionNode: React.FC<FilterConditionNodeProps> = ({
       <div className="flex-grow">{renderValueInput()}</div>
 
       <Button
+        type="button"
         variant="ghost"
         size="icon"
         onClick={handleRemove}
-        className="flex-shrink-0 h-6  border-none px-1"
+        className="h-6 flex-shrink-0 border-none px-1"
       >
         <Trash2 size={12} className="" />
       </Button>

@@ -17,7 +17,7 @@ export class SupabaseAuthClient implements HeliconeAuthClient {
     private supabaseClient?: SupabaseClient<Database>,
     user?: HeliconeUser,
     private org?: { org: HeliconeOrg; role: string },
-    private queryClient?: QueryClient
+    private queryClient?: QueryClient,
   ) {
     this.user = user;
   }
@@ -171,6 +171,53 @@ export class SupabaseAuthClient implements HeliconeAuthClient {
     return ok(undefined);
   }
 
+  async signInWithSSO({
+    domain,
+    options,
+  }: {
+    domain: string;
+    options?: { redirectTo?: string };
+  }): Promise<Result<void, string>> {
+    if (!this.supabaseClient) {
+      return err("Supabase client not found");
+    }
+    const { data, error } = await this.supabaseClient.auth.signInWithSSO({
+      domain,
+      options,
+    });
+    if (error) {
+      return err(error.message);
+    }
+    if (!data?.url) {
+      return err("SSO redirect URL not provided");
+    }
+
+    // Validate URL format
+    try {
+      new URL(data.url);
+    } catch {
+      return err("Invalid SSO redirect URL");
+    }
+
+    if (typeof window === "undefined" || !window.location) {
+      return err("Window object is not available for SSO redirect");
+    }
+
+    // Clear cache right before redirect to SSO provider
+    if (this.queryClient) {
+      this.queryClient.clear();
+    }
+
+    try {
+      window.location.href = data.url;
+      return ok(undefined);
+    } catch (redirectError) {
+      return err(
+        "Failed to redirect to SSO provider due to an unknown error"
+      );
+    }
+  }
+
   async updateUser({
     password,
   }: {
@@ -188,6 +235,16 @@ export class SupabaseAuthClient implements HeliconeAuthClient {
     }
     return ok(undefined);
   }
+
+  async changePassword({
+    currentPassword,
+    newPassword,
+  }: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<Result<void, string>> {
+    throw new Error("Not implemented");
+  }
 }
 
 export function useSupabaseAuthClient(): HeliconeAuthClient {
@@ -203,7 +260,7 @@ export function useSupabaseAuthClient(): HeliconeAuthClient {
         email: user?.email ?? "",
       },
       undefined,
-      queryClient
+      queryClient,
     );
   }, [supabaseClient, user?.id, user?.email, queryClient]);
 }

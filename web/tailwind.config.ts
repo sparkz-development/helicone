@@ -20,7 +20,6 @@ export default {
         "2xl": "1400px",
       },
     },
-    fontFamily: {},
     transparent: "transparent",
     current: "currentColor",
     extend: {
@@ -86,6 +85,10 @@ export default {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
         },
+        brand: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
         // Secondary Colors
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -95,6 +98,10 @@ export default {
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
+        },
+        subdued: {
+          DEFAULT: "hsl(var(--subdued))",
+          foreground: "hsl(var(--subdued-foreground))",
         },
         // Accent Colors
         accent: {
@@ -130,7 +137,7 @@ export default {
         },
         // Sidebar Colors
         sidebar: {
-          background: "hsl(var(--sidebar-background))",
+          background: "var(--sidebar-background)",
           foreground: "hsl(var(--sidebar-foreground))",
           primary: "hsl(var(--sidebar-primary))",
           "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
@@ -262,6 +269,10 @@ export default {
       variants: ["hover"],
     },
     {
+      pattern: /^(text-chart-[1-9]|text-chart-10)$/,
+      variants: ["hover"],
+    },
+    {
       pattern: /^(fill-chart-[1-9]|fill-chart-10)$/,
       variants: ["hover"],
     },
@@ -272,9 +283,6 @@ export default {
   ],
   plugins: [
     require("tailwind-scrollbar"),
-    require("@assistant-ui/react/tailwindcss")({
-      components: ["default-theme"],
-    }),
     require("tailwindcss-animate"),
     require("@tailwindcss/typography"),
     plugin(function ({ addVariant }) {

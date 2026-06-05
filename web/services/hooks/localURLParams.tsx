@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { logger } from "@/lib/telemetry/logger";
 
 export function useURLParams<T>(
   key: string,
   initialValue: T,
-  onNothingStored?: (setStored: (t: T) => void) => void
+  onNothingStored?: (setStored: (t: T) => void) => void,
 ): [T, (t: T) => void] {
   const [storedValue, setStoredValue] = useState<T>(initialValue);
 
@@ -16,7 +17,13 @@ export function useURLParams<T>(
       try {
         setStoredValue(JSON.parse(stored));
       } catch (e) {
-        console.error(`Failed to parse URL param ${key}:`, e);
+        logger.error(
+          {
+            key,
+            error: e,
+          },
+          "Failed to parse URL param",
+        );
         if (onNothingStored) onNothingStored(setStoredValue);
       }
     } else if (onNothingStored) {
@@ -37,7 +44,7 @@ export function useURLParams<T>(
         window.location.pathname + "?" + params.toString();
       window.history.pushState(null, "", newRelativePathQuery);
     },
-    [key]
+    [key],
   );
 
   return [storedValue, setValue];

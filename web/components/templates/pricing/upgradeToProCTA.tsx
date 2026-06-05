@@ -7,10 +7,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useCostForPrompts } from "./hooks";
 import { ContactCTA } from "./contactCTA";
+import { logger } from "@/lib/telemetry/logger";
 
 export const UpgradeToProCTA = ({
   defaultPrompts = false,
-  defaultAlerts = false,
   showAddons = false,
   showContactCTA = false,
 }) => {
@@ -25,7 +25,6 @@ export const UpgradeToProCTA = ({
     },
   });
   const [prompts, setPrompts] = useState(defaultPrompts);
-  const [alerts, setAlerts] = useState(defaultAlerts);
 
   const upgradeToPro = useMutation({
     mutationFn: async () => {
@@ -38,7 +37,6 @@ export const UpgradeToProCTA = ({
         body: {
           addons: {
             prompts,
-            alerts,
           },
         },
       });
@@ -50,7 +48,9 @@ export const UpgradeToProCTA = ({
     return (
       org?.currentOrg?.tier === "pro-20240913" ||
       org?.currentOrg?.tier === "pro-20250202" ||
-      org?.currentOrg?.tier === "team-20250130"
+      org?.currentOrg?.tier === "pro-20251210" ||
+      org?.currentOrg?.tier === "team-20250130" ||
+      org?.currentOrg?.tier === "team-20251210"
     );
   }, [org?.currentOrg?.tier]);
 
@@ -59,8 +59,8 @@ export const UpgradeToProCTA = ({
   return (
     <div>
       {showAddons && (
-        <div className="mt-4 border rounded-lg p-4">
-          <h3 className="font-semibold mb-2">Add-ons</h3>
+        <div className="mt-4 rounded-lg border p-4">
+          <h3 className="mb-2 font-semibold">Add-ons</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Switch
@@ -73,25 +73,10 @@ export const UpgradeToProCTA = ({
                   htmlFor="unlimited-prompts"
                   className="whitespace-nowrap"
                 >
-                  Prompts & Experiments
+                  Prompts
                 </Label>
-                <p className="text-sm text-muted-foreground whitespace-nowrap text-slate-500">
+                <p className="whitespace-nowrap text-sm text-muted-foreground text-slate-500">
                   + ${costForPrompts.data?.data ?? "loading..."}/mo
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <Switch
-                id="unlimited-alerts"
-                checked={alerts}
-                onCheckedChange={(checked) => setAlerts(checked)}
-              />
-              <div className="flex items-center space-x-2">
-                <Label htmlFor="unlimited-alerts" className="whitespace-nowrap">
-                  Unlimited Alerts
-                </Label>
-                <p className="text-sm text-muted-foreground whitespace-nowrap text-slate-500">
-                  + $15/mo
                 </p>
               </div>
             </div>
@@ -108,18 +93,18 @@ export const UpgradeToProCTA = ({
             if (result.data) {
               window.open(result.data, "_blank");
             } else {
-              console.error("No URL returned from upgrade mutation");
+              logger.error("No URL returned from upgrade mutation");
             }
           }
         }}
-        className="w-full mt-4"
+        className="mt-4 w-full"
         disabled={upgradeToPro.isPending}
       >
         {upgradeToPro.isPending
           ? "Loading..."
           : isPro
-          ? "Upgrade"
-          : "Start 7-day free trial"}
+            ? "Upgrade"
+            : "Start 7-day free trial"}
       </Button>
     </div>
   );

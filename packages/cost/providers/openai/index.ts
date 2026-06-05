@@ -5,7 +5,7 @@
 
 import { ModelDetailsMap, ModelRow } from "../../interfaces/Cost";
 
-const costs: ModelRow[] = [
+const baseCosts: ModelRow[] = [
   {
     model: {
       operator: "equals",
@@ -266,8 +266,9 @@ const costs: ModelRow[] = [
       value: "gpt-4o",
     },
     cost: {
-      prompt_token: 0.000005,
-      completion_token: 0.000015,
+      prompt_token: 0.0000025,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.00000125,
     },
     showInPlayground: true,
   },
@@ -290,6 +291,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.00000015,
       completion_token: 0.0000006,
+      prompt_cache_read_token: 0.000000075,
     },
     showInPlayground: true,
   },
@@ -301,6 +303,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.00000015,
       completion_token: 0.0000006,
+      prompt_cache_read_token: 0.000000075,
     },
     showInPlayground: true,
   },
@@ -460,6 +463,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.0000025,
       completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
     },
   },
   {
@@ -470,6 +474,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.0000025,
       completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
     },
     showInPlayground: true,
   },
@@ -501,8 +506,9 @@ const costs: ModelRow[] = [
       value: "o1-mini",
     },
     cost: {
-      prompt_token: 0.000003,
-      completion_token: 0.000012,
+      prompt_token: 0.0000011,
+      completion_token: 0.0000044,
+      prompt_cache_read_token: 0.00000055,
     },
     showInPlayground: true,
   },
@@ -512,8 +518,9 @@ const costs: ModelRow[] = [
       value: "o1-mini-2024-09-12",
     },
     cost: {
-      prompt_token: 0.000003,
-      completion_token: 0.000012,
+      prompt_token: 0.0000011,
+      completion_token: 0.0000044,
+      prompt_cache_read_token: 0.00000055,
     },
     showInPlayground: true,
   },
@@ -536,8 +543,19 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.000015,
       completion_token: 0.00006,
+      prompt_cache_read_token: 0.0000075,
     },
     showInPlayground: true,
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "o1-pro",
+    },
+    cost: {
+      prompt_token: 0.00015,
+      completion_token: 0.0006,
+    },
   },
   {
     model: {
@@ -547,6 +565,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.0000011,
       completion_token: 0.0000044,
+      prompt_cache_read_token: 0.00000055,
     },
     showInPlayground: true,
   },
@@ -558,6 +577,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.0000011,
       completion_token: 0.0000044,
+      prompt_cache_read_token: 0.00000055,
     },
     showInPlayground: true,
   },
@@ -567,11 +587,21 @@ const costs: ModelRow[] = [
       value: "o3-2025-04-16",
     },
     cost: {
-      prompt_token: 0.00001,
-      completion_token: 0.00004,
-      prompt_cache_read_token: 0.0000025,
+      prompt_token: 0.000002,
+      completion_token: 0.000008,
+      prompt_cache_read_token: 0.0000005,
     },
     showInPlayground: true,
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "o3-pro",
+    },
+    cost: {
+      prompt_token: 0.00002,
+      completion_token: 0.00008,
+    },
   },
   {
     model: {
@@ -651,11 +681,11 @@ const costs: ModelRow[] = [
       value: "gpt-4o-realtime",
     },
     cost: {
-      prompt_token: 0.000005,
-      completion_token: 0.00002,
+      prompt_token: 0.000004,
+      completion_token: 0.000016,
       prompt_audio_token: 0.00004,
       completion_audio_token: 0.00008,
-      prompt_cache_read_token: 0.0000025,
+      prompt_cache_read_token: 0.0000004,
     },
   },
   {
@@ -664,10 +694,11 @@ const costs: ModelRow[] = [
       value: "gpt-4o-mini-realtime",
     },
     cost: {
-      prompt_token: 0.00000015,
-      completion_token: 0.0000006,
+      prompt_token: 0.0000006,
+      completion_token: 0.0000024,
       prompt_audio_token: 0.00001,
       completion_audio_token: 0.00002,
+      prompt_cache_read_token: 0.0000003,
     },
   },
   {
@@ -678,6 +709,7 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.0000011,
       completion_token: 0.0000044,
+      prompt_cache_read_token: 0.000000275,
     },
     showInPlayground: true,
   },
@@ -689,9 +721,238 @@ const costs: ModelRow[] = [
     cost: {
       prompt_token: 0.0000011,
       completion_token: 0.0000044,
+      prompt_cache_read_token: 0.000000275,
     },
     showInPlayground: true,
   },
+  {
+    model: {
+      operator: "includes",
+      value: "openai/gpt-4o-mini-search-preview",
+    },
+    cost: {
+      prompt_token: 1.5e-7,
+      completion_token: 6e-7,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "gpt-4o-search-preview",
+    },
+    cost: {
+      prompt_token: 0.0000025,
+      completion_token: 0.00001,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "chatgpt-4o-latest",
+    },
+    cost: {
+      prompt_token: 0.000005,
+      completion_token: 0.000015,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5-2025-08-07",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5-mini-2025-08-07",
+    },
+    cost: {
+      prompt_token: 0.00000025,
+      completion_token: 0.000002,
+      prompt_cache_read_token: 0.000000025,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5-nano-2025-08-07",
+    },
+    cost: {
+      prompt_token: 0.00000005,
+      completion_token: 0.0000004,
+      prompt_cache_read_token: 0.000000005,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5-mini",
+    },
+    cost: {
+      prompt_token: 0.00000025,
+      completion_token: 0.000002,
+      prompt_cache_read_token: 0.000000025,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5-nano",
+    },
+    cost: {
+      prompt_token: 0.00000005,
+      completion_token: 0.0000004,
+      prompt_cache_read_token: 0.000000005,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5-chat-latest",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.1",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.1-codex",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.1-codex-mini",
+    },
+    cost: {
+      prompt_token: 0.00000025,
+      completion_token: 0.000002,
+      prompt_cache_read_token: 0.000000025,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.1-chat-latest",
+    },
+    cost: {
+      prompt_token: 0.00000125,
+      completion_token: 0.00001,
+      prompt_cache_read_token: 0.000000125,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "codex-mini-latest",
+    },
+    cost: {
+      prompt_token: 0.0000015,
+      completion_token: 0.000006,
+      prompt_cache_read_token: 0.000000375,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.2",
+    },
+    cost: {
+      prompt_token: 0.00000175,
+      completion_token: 0.000014,
+      prompt_cache_read_token: 0.000000175,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.2-2025-12-11",
+    },
+    cost: {
+      prompt_token: 0.00000175,
+      completion_token: 0.000014,
+      prompt_cache_read_token: 0.000000175,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.2-pro",
+    },
+    cost: {
+      prompt_token: 0.000021_00,
+      completion_token: 0.000168_00,
+    },
+  },
+  {
+    model: {
+      operator: "equals",
+      value: "gpt-5.2-chat-latest",
+    },
+    cost: {
+      prompt_token: 0.00000175,
+      completion_token: 0.000014,
+      prompt_cache_read_token: 0.000000175,
+    },
+  },
+];
+
+// OpenAI Batch API is 50% cheaper than the regular API
+// We add every single one with a equals operator and a -batch suffix.
+const costs: ModelRow[] = [
+  ...baseCosts,
+  ...baseCosts.map((cost) => ({
+    model: {
+      operator: "equals" as const,
+      value: `${cost.model.value}-batch`,
+    },
+    cost: {
+      prompt_token: cost.cost.prompt_token / 2,
+      completion_token: cost.cost.completion_token / 2,
+      ...(cost.cost.prompt_audio_token && {
+        prompt_audio_token: cost.cost.prompt_audio_token,
+      }),
+      ...(cost.cost.completion_audio_token && {
+        completion_audio_token: cost.cost.completion_audio_token,
+      }),
+    },
+  })),
 ];
 
 const modelDetails: ModelDetailsMap = {

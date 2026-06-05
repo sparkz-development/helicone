@@ -151,6 +151,31 @@ export interface CreatePromptResponse {
 @Tags("Prompt")
 @Security("api_key")
 export class PromptController extends Controller {
+  @Get("has-prompts")
+  public async hasPrompts(
+    @Request() request: JawnAuthenticatedRequest
+  ): Promise<Result<{ hasPrompts: boolean }, string>> {
+    const promptManager = new PromptManager(request.authParams);
+
+    const result = await promptManager.getPrompts({
+      filter: {}
+    });
+    
+    if (result.error) {
+      this.setStatus(500);
+      return result;
+    }
+
+    const hasPrompts = (result.data?.length ?? 0) > 0;
+    this.setStatus(200);
+    return {
+      data: {
+        hasPrompts: hasPrompts
+      },
+      error: null
+    };
+  }
+
   @Post("query")
   public async getPrompts(
     @Body()
@@ -439,7 +464,7 @@ export class PromptController extends Controller {
     const promptManager = new PromptManager(request.authParams);
     const result = await promptManager.getPromptVersions(
       {
-        left: requestBody.filter ?? "all",
+        left: requestBody.filter ?? {},
         operator: "and",
         right: {
           prompt_v2: {
@@ -509,7 +534,7 @@ export class PromptController extends Controller {
     const promptManager = new PromptManager(request.authParams);
     const result = await promptManager.getCompiledPromptVersions(
       {
-        left: requestBody.filter ?? "all",
+        left: requestBody.filter ?? {},
         operator: "and",
         right: {
           prompt_v2: {
@@ -540,7 +565,7 @@ export class PromptController extends Controller {
     const promptManager = new PromptManager(request.authParams);
     const result = await promptManager.getPormptVersionsTemplates(
       {
-        left: requestBody.filter ?? "all",
+        left: requestBody.filter ?? {},
         operator: "and",
         right: {
           prompt_v2: {

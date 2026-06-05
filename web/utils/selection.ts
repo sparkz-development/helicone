@@ -1,3 +1,5 @@
+import { logger } from "@/lib/telemetry/logger";
+
 export type SelectionInfo = {
   selectionStart: number;
   selectionEnd: number;
@@ -10,7 +12,7 @@ export type SelectionRange = {
 
 export function createSelectionRange(
   pre: HTMLPreElement,
-  selection: SelectionInfo
+  selection: SelectionInfo,
 ): SelectionRange | null {
   // Create a range for the selection
   const range = document.createRange();
@@ -66,7 +68,12 @@ export function createSelectionRange(
       preRect: pre.getBoundingClientRect(),
     };
   } catch (error) {
-    console.error("Error setting range:", error);
+    logger.error(
+      {
+        error,
+      },
+      "Error setting range",
+    );
     return null;
   }
 }

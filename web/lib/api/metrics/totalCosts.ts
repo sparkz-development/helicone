@@ -1,9 +1,9 @@
-import { clickhousePriceCalc } from "@helicone-package/cost";
 import { FilterNode } from "@helicone-package/filters/filterDefs";
 import { timeFilterToFilterNode } from "@helicone-package/filters/helpers";
 import { buildFilterWithAuthClickHouse } from "@helicone-package/filters/filters";
 import { Result, resultMap } from "@/packages/common/result";
 import { dbQueryClickhouse } from "../db/dbExecute";
+import { COST_PRECISION_MULTIPLIER } from "@helicone-package/cost/costCalc";
 
 export interface TotalCost {
   cost: number;
@@ -16,7 +16,7 @@ export async function getTotalCost(
     start: Date;
     end: Date;
   },
-  org_id: string
+  org_id: string,
 ): Promise<
   Result<
     {
@@ -35,12 +35,12 @@ export async function getTotalCost(
         operator: "and",
       },
       argsAcc: [],
-    }
+    },
   );
   const query = `
 
   WITH total_cost AS (
-    SELECT ${clickhousePriceCalc("request_response_rmt")} as cost
+    SELECT sum(cost) / ${COST_PRECISION_MULTIPLIER} as cost
     FROM request_response_rmt
     WHERE (
       (${filterString})

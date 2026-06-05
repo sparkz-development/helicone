@@ -128,13 +128,15 @@ const ExperimentsPreview = () => {
       org?.currentOrg?.tier === "enterprise" ||
       org?.currentOrg?.tier === "pro-20240913" ||
       org?.currentOrg?.tier === "pro-20250202" ||
-      org?.currentOrg?.tier === "team-20250130",
-    [org?.currentOrg?.tier]
+      org?.currentOrg?.tier === "pro-20251210" ||
+      org?.currentOrg?.tier === "team-20250130" ||
+      org?.currentOrg?.tier === "team-20251210",
+    [org?.currentOrg?.tier],
   );
 
   const pricingPlan = useMemo(
     () => (isPaidPlan ? paidPlan : freePlan),
-    [isPaidPlan]
+    [isPaidPlan],
   );
 
   const handleStartTrial = async (selectedPlan?: ExperimentPricingPlanName) => {
@@ -155,7 +157,7 @@ const ExperimentsPreview = () => {
     return null;
   }
 
-  console.log(`Requires upgrade: ${isPaidPlan}`);
+  // Check if user requires upgrade for experiments feature
 
   return (
     <>

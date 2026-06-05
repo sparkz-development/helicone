@@ -46,10 +46,10 @@ export const useFilterUIDefinitions = () => {
   });
 
   const models = useQuery({
-    queryKey: ["/v1/models", org?.currentOrg?.id],
+    queryKey: ["/v1/organization/models", org?.currentOrg?.id],
     queryFn: async (query) => {
       const jawn = getJawnClient(query.queryKey[1]);
-      const res = await jawn.GET("/v1/models");
+      const res = await jawn.GET("/v1/organization/models");
       return res.data;
     },
     refetchOnWindowFocus: false,
@@ -85,7 +85,7 @@ export const useFilterUIDefinitions = () => {
               ].label
             : property.property,
         type: "searchable",
-        operators: ["contains", "eq", "neq", "like", "ilike", "in"],
+        operators: ["contains", "not-contains", "eq", "neq", "like", "ilike", "in"],
         onSearch: (searchTerm) => {
           return searchProperties
             .mutateAsync({
@@ -97,7 +97,7 @@ export const useFilterUIDefinitions = () => {
                 res?.data?.map((r) => ({
                   label: r,
                   value: r,
-                })) ?? []
+                })) ?? [],
             );
         },
         subType: "property",
@@ -108,7 +108,7 @@ export const useFilterUIDefinitions = () => {
       id: "model",
       label: "Model",
       type: "searchable",
-      operators: ["contains", "eq", "neq", "like", "ilike", "in"],
+      operators: ["contains", "not-contains", "eq", "neq", "like", "ilike", "in"],
 
       onSearch: async (searchTerm) => {
         return Promise.resolve(
@@ -116,12 +116,12 @@ export const useFilterUIDefinitions = () => {
             ?.filter(
               (m) =>
                 m.model.toLowerCase().includes(searchTerm.toLowerCase()) &&
-                m.model !== ""
+                m.model !== "",
             )
             .map((m) => ({
               label: m.model,
               value: m.model,
-            })) ?? []
+            })) ?? [],
         );
       },
       table: "request_response_rmt",
@@ -130,7 +130,7 @@ export const useFilterUIDefinitions = () => {
     // Replace or add dynamic definitions to the static ones
     const staticIdsToExclude = dynamicDefinitions.map((def) => def.id);
     const filteredStaticDefs = STATIC_FILTER_DEFINITIONS.filter(
-      (def) => !staticIdsToExclude.includes(def.id)
+      (def) => !staticIdsToExclude.includes(def.id),
     );
 
     const definitions = [

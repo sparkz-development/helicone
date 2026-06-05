@@ -13,21 +13,20 @@ interface ProducthuntModalProps {
 const ProducthuntSupportModal: React.FC<ProducthuntModalProps> = ({
   open,
   setOpen,
-  upgradeOpen,
 }) => {
   const handleProductHuntClick = () => {
     Cookies.set("visitedProductHunt", "true", { expires: 1 });
     window.open(
       "https://www.producthunt.com/leaderboard/daily/2024/8/22",
-      "_blank"
+      "_blank",
     );
     setOpen(false);
   };
 
   return (
     <ThemedModal open={open} setOpen={setOpen}>
-      <div className="flex flex-col items-start space-y-6 w-[374px] text-left">
-        <div className="flex justify-between items-center w-full">
+      <div className="flex w-[374px] flex-col items-start space-y-6 text-left">
+        <div className="flex w-full items-center justify-between">
           <div className="text-2xl font-bold text-gray-900 dark:text-white">
             We need your help! 🫶
           </div>
@@ -76,7 +75,6 @@ const UpgradeOfferModal: React.FC<ProducthuntModalProps> = ({
 }) => {
   const handleUpgradeClick = () => {
     // Implement your upgrade logic here
-    console.log("Upgrade clicked");
     Cookies.set("closedProductHuntPromo", "true", { expires: 365 });
     setOpen(false);
     upgradeOpen(true);
@@ -84,8 +82,8 @@ const UpgradeOfferModal: React.FC<ProducthuntModalProps> = ({
 
   return (
     <ThemedModal open={open} setOpen={setOpen}>
-      <div className="flex flex-col items-start space-y-6 w-[374px] text-left">
-        <div className="flex justify-between items-center w-full">
+      <div className="flex w-[374px] flex-col items-start space-y-6 text-left">
+        <div className="flex w-full items-center justify-between">
           <div className="text-2xl font-bold text-gray-900 dark:text-white">
             Launch Promo 🎉
           </div>
@@ -110,7 +108,7 @@ const UpgradeOfferModal: React.FC<ProducthuntModalProps> = ({
         <button
           onClick={handleUpgradeClick}
           tabIndex={-1}
-          className="bg-[#FF6154] text-white px-6 py-3 rounded-md hover:bg-[#E55A4D] transition-colors"
+          className="rounded-md bg-[#FF6154] px-6 py-3 text-white transition-colors hover:bg-[#E55A4D]"
         >
           Upgrade
         </button>
@@ -122,8 +120,8 @@ const UpgradeOfferModal: React.FC<ProducthuntModalProps> = ({
 export const ProducthuntLaunchCard: React.FC = () => {
   return (
     <div>
-      <h2 className="text-sm font-medium mb-4">Product Hunt Launch! 🎉</h2>
-      <p className="text-gray-600 mb-4 text-xs">
+      <h2 className="mb-4 text-sm font-medium">Product Hunt Launch! 🎉</h2>
+      <p className="mb-4 text-xs text-gray-600">
         We just launched today and would love your support! 🙏
       </p>
       <a
@@ -144,19 +142,19 @@ export const ProducthuntLaunchCard: React.FC = () => {
 };
 
 export const ProducthuntLaunchPromoCard: React.FC<{
-  setOpen: (open: boolean) => void;
+  setOpen: (_open: boolean) => void;
 }> = ({ setOpen }) => {
   return (
     <div>
-      <div className="flex justify-between items-center w-full">
-        <h2 className="text-sm font-medium mb-4">Launch Promo 🎉</h2>
+      <div className="flex w-full items-center justify-between">
+        <h2 className="mb-4 text-sm font-medium">Launch Promo 🎉</h2>
         <ArrowUpRightIcon
-          className="h-4 w-4 mb-4 cursor-pointer text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          className="mb-4 h-4 w-4 cursor-pointer text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           onClick={() => setOpen(true)}
         />
       </div>
 
-      <p className="text-gray-600  mb-4 text-xs">
+      <p className="mb-4 text-xs text-gray-600">
         Get $500 in credit when you upgrade to Growth today. Use code{" "}
         <span className="font-semibold text-[#FF6154] dark:text-white">
           PHUNT500
@@ -180,7 +178,7 @@ export const ProducthuntLaunchPromoCard: React.FC<{
 };
 
 const ProducthuntModal: React.FC<{
-  setUpgradeOpen: (open: boolean) => void;
+  setUpgradeOpen: (_open: boolean) => void;
 }> = ({ setUpgradeOpen }) => {
   const [open, setOpen] = useState(false);
   const [visitedProductHunt, setVisitedProductHunt] = useState(false);

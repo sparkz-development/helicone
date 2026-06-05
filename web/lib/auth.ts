@@ -1,6 +1,9 @@
 import { betterAuth } from "better-auth";
+import { customSession } from "better-auth/plugins";
+import { getUser } from "@/packages/common/toImplement/server/useBetterAuthClient";
 import { Pool } from "pg";
 import nodemailer from "nodemailer";
+import { logger } from "@/lib/telemetry/logger";
 
 // Create a reusable transporter object using the default SMTP transport
 // Configure for MailHog in development, or your actual email service in production
@@ -40,12 +43,12 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     // Define the function to send the verification email
     sendVerificationEmail: async ({ user, url }, request) => {
-      console.log("Sending verification email to", user.email);
+      logger.info({ email: user.email }, "Sending verification email");
       // Define your email content using the provided HTML template
       const emailHtml = `
 <div style="width: 100%; background-color: #ffffff">
   <div style="margin: 0px auto; padding: 16px; width: 512px">
-    <img width="160" alt="Helicone Logo" src="https://us.helicone.ai/_next/image?url=%2Fstatic%2Flogo-no-border.png&w=384&q=75">
+    <img width="160" alt="Helicone Logo" src="${process.env.NEXT_PUBLIC_APP_URL || "https://us.helicone.ai"}/_next/image?url=%2Fstatic%2Flogo-no-border.png&w=384&q=75">
     <p style="font-size: 16px;">Hey there 👋,</p> <!-- Removed extra </h1> -->
     <p style="font-size: 16px;">Thank you for joining our community of thousands of developers. To get started, please click the button below:</p>
     <!-- Use the 'url' variable provided by better-auth -->
@@ -78,22 +81,46 @@ export const auth = betterAuth({
           html: emailHtml, // html body
         });
 
-        console.log("Verification email sent: %s", info.messageId);
+        logger.info({ messageId: info.messageId }, "Verification email sent");
         // In development, you can also log the URL for easy access:
         if (process.env.NODE_ENV === "development") {
-          console.log("Verification URL: ", url);
+          logger.info({ url }, "Verification URL");
         }
       } catch (error) {
-        console.error("Error sending verification email:", error);
-        console.error("SMTP Config:", {
-          host: process.env.SMTP_HOST,
-          port: process.env.SMTP_PORT,
-          secure: process.env.SMTP_SECURE === "true",
-          hasAuth: !process.env.SMTP_HOST?.includes("mailhog"),
-        });
+        logger.error({ error }, "Error sending verification email");
+        logger.error(
+          {
+            host: process.env.SMTP_HOST,
+            port: process.env.SMTP_PORT,
+            secure: process.env.SMTP_SECURE === "true",
+            hasAuth: !process.env.SMTP_HOST?.includes("mailhog"),
+          },
+          "SMTP Config",
+        );
         // Optionally, re-throw the error or handle it as needed
         // throw error;
       }
     },
   },
+  trustedOrigins: [process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3008"],
+  plugins: [
+    customSession(async ({ user, session }) => {
+      const dbUser = await getUser(user.id);
+      if (dbUser.error || !dbUser.data) {
+        logger.warn("could not fetch authUserId from db");
+        return {
+          user,
+          session,
+        };
+      }
+
+      return {
+        user: {
+          authUserId: dbUser.data.id,
+          ...user,
+        },
+        session,
+      };
+    }),
+  ],
 });

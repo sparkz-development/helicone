@@ -36,7 +36,6 @@ export function getModelFromRequest(
 }
 
 function getModelFromPath(path: string) {
-  console.log("path", path);
   const regex1 = /\/engines\/([^/]+)/;
   const regex2 = /models\/([^/:]+)/;
 
@@ -58,6 +57,7 @@ export function getModelFromResponse(responseBody: any) {
     responseBody?.model ??
     responseBody?.body?.model ??
     responseBody?.body?.modelVersion ??
+    responseBody?.providerMetadata?.gateway?.routing?.originalModelId ??
     null
   );
 }

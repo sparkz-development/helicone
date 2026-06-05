@@ -1,8 +1,9 @@
 import { generate, GenerateParams } from "./generate";
+import { logger } from "@/lib/telemetry/logger";
 
 export async function generateStream(
   params: GenerateParams,
-  options?: { headers?: { "x-cancel": string } }
+  options?: { headers?: { "x-cancel": string } },
 ): Promise<ReadableStream<Uint8Array>> {
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -12,6 +13,7 @@ export async function generateStream(
   generate({
     ...params,
     signal: abortController.signal,
+    // @ts-ignore
     stream: {
       onChunk: async (chunk: string) => {
         if (options?.headers?.["x-cancel"] === "1") {
@@ -20,11 +22,13 @@ export async function generateStream(
           return;
         }
         try {
-          // For includeReasoning=false, chunk is already a string
-          // For includeReasoning=true, chunk is a JSON string
+          // Pass through the raw chunk exactly as received
           await writer.write(encoder.encode(chunk));
         } catch (error) {
-          console.error("[generateStream] Error writing chunk:", error);
+          logger.error(
+            { error, chunkLength: chunk.length },
+            "[generateStream] Error writing chunk",
+          );
           await writer.abort(error);
           throw error;
         }
@@ -35,12 +39,12 @@ export async function generateStream(
           await writer.close();
         } catch (error) {
           // If we can't close, the stream is probably already closed or errored
-          console.debug("[generateStream] Could not close stream:", error);
+          logger.debug({ error }, "[generateStream] Could not close stream");
         }
       },
     },
   }).catch(async (error) => {
-    console.error("[generateStream] Streaming error:", error);
+    logger.error({ error }, "[generateStream] Streaming error");
     await writer.abort(error);
   });
 

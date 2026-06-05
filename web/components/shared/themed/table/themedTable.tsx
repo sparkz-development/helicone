@@ -19,7 +19,8 @@ import {
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
 import Link from "next/link";
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useColumnResize } from "@/hooks/useColumnResize";
 import { TimeInterval } from "../../../../lib/timeCalculations/time";
 import { Result } from "@/packages/common/result";
 import { SingleFilterDef } from "@helicone-package/filters/frontendFilterDefs";
@@ -30,9 +31,13 @@ import LoadingAnimation from "../../loadingAnimation";
 import { DragColumnItem } from "./columns/DragList";
 import DraggableColumnHeader from "./columns/draggableColumnHeader";
 
+// Constants for table sizing
+const HEADER_HEIGHT = "44px";
+const CHECKBOX_COLUMN_WIDTH = "48px";
+
 type CheckboxMode = "always_visible" | "on_hover" | "never";
 
-function ConditionalLink<T>({
+function ConditionalLink({
   children,
   href,
   className,
@@ -65,7 +70,7 @@ interface ThemedTableProps<T extends { id?: string; subRows?: T[] }> {
     setAdvancedFilters: (filters: UIFilterRowTree) => void;
     searchPropertyFilters: (
       property: string,
-      search: string
+      search: string,
     ) => Promise<Result<void, string>>;
     show?: boolean;
   };
@@ -84,6 +89,8 @@ interface ThemedTableProps<T extends { id?: string; subRows?: T[] }> {
   hideHeader?: boolean;
   noDataCTA?: React.ReactNode;
   onDataSet?: () => void;
+  showClearFilters?: boolean;
+  onClearFilters?: () => void;
   savedFilters?: {
     filters?: OrganizationFilter[];
     currentFilter?: string;
@@ -121,12 +128,17 @@ interface ThemedTableProps<T extends { id?: string; subRows?: T[] }> {
    */
   onToggleAllRows?: (table: ReactTable<T>) => void;
   currentRow?: T;
+  /**
+   * Custom loading text to display during skeleton loading state
+   */
+  loadingText?: string;
 }
 
 export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
-  props: ThemedTableProps<T>
+  props: ThemedTableProps<T>,
 ) {
   const {
+    id,
     defaultData,
     defaultColumns,
     skeletonLoading,
@@ -135,6 +147,8 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
     sortable,
     onRowSelect,
     noDataCTA,
+    showClearFilters = false,
+    onClearFilters,
     checkboxMode = "never",
     children,
     onSelectAll,
@@ -144,9 +158,17 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
     tableRef,
     onToggleAllRows,
     currentRow,
+    loadingText = "Loading Data...",
   } = props;
 
-  const [expanded, setExpanded] = React.useState<ExpandedState>({});
+  const [expanded, setExpanded] = useState<ExpandedState>({});
+
+  // Use the column resize hook
+  const { columnSizes, resizingColumn, handleResizeStart } = useColumnResize({
+    columns: defaultColumns,
+    tableId: id,
+  });
+
   const table = useReactTable({
     data: defaultData,
     columns: defaultColumns,
@@ -213,21 +235,34 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
   };
 
   return (
-    <ScrollArea className="h-full w-full sentry-mask-me" orientation="both">
+    <ScrollArea
+      className="sentry-mask-me h-full w-full"
+      orientation="both"
+      width="thin"
+    >
       {children && <div className="flex-shrink-0">{children}</div>}
       <div className="h-full bg-slate-50 dark:bg-slate-950">
         {skeletonLoading ? (
-          <LoadingAnimation title="Loading Data..." />
+          <LoadingAnimation title={loadingText} />
         ) : rows.length === 0 ? (
-          <div className="bg-white dark:bg-black h-48 w-full  border-border py-2 px-4 flex flex-col space-y-3 justify-center items-center">
+          <div className="flex h-48 w-full flex-col items-center justify-center space-y-3 border-border bg-white px-4 py-2 dark:bg-black">
             <TableCellsIcon className="h-12 w-12 text-slate-900 dark:text-slate-100" />
             <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
               No Data Found
             </p>
+            {showClearFilters && onClearFilters && (
+              <Button
+                variant="outline"
+                onClick={onClearFilters}
+                className="text-slate-900 dark:text-slate-100"
+              >
+                Clear Filters
+              </Button>
+            )}
             {noDataCTA}
           </div>
         ) : table.getVisibleFlatColumns().length === 0 ? (
-          <div className="bg-white dark:bg-black h-48 w-full  border-border py-2 px-4 flex flex-col space-y-3 justify-center items-center">
+          <div className="flex h-48 w-full flex-col items-center justify-center space-y-3 border-border bg-white px-4 py-2 dark:bg-black">
             <AdjustmentsHorizontalIcon className="h-12 w-12 text-slate-900 dark:text-slate-100" />
             <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
               No Columns Selected
@@ -244,11 +279,19 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr
                   key={headerGroup.id}
-                  className="sticky top-0 bg-slate-50 dark:bg-slate-950 z-[2] h-11"
+                  className="sticky top-0 z-[2] h-11 bg-slate-50 dark:bg-slate-950"
                 >
                   {checkboxMode !== "never" && (
-                    <th className="relative">
-                      <div className="flex justify-center items-center h-full ml-2">
+                    <th
+                      className="relative"
+                      style={{
+                        height: HEADER_HEIGHT,
+                        width: CHECKBOX_COLUMN_WIDTH,
+                        minWidth: CHECKBOX_COLUMN_WIDTH,
+                        maxWidth: CHECKBOX_COLUMN_WIDTH,
+                      }}
+                    >
+                      <div className="flex h-full items-center justify-center px-2">
                         <Checkbox
                           variant="helicone"
                           onCheckedChange={handleSelectAll}
@@ -269,44 +312,61 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
                       <div className="absolute bottom-0 left-0 right-0 h-[0.5px] bg-slate-300 dark:bg-slate-700" />
                     </th>
                   )}
-                  {headerGroup.headers.map((header, index) => (
-                    <th
-                      key={`header-${index}`}
-                      className={clsx(
-                        "relative",
-                        index === headerGroup.headers.length - 1 &&
-                          "border-r border-slate-300 dark:border-slate-700"
-                      )}
-                    >
-                      {index === 0 && onToggleAllRows !== undefined && (
-                        <div className="absolute left-1 top-1/2 -translate-y-1/2 z-10">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onToggleAllRows(table)}
-                            className="h-6 w-6"
-                            aria-label={"Toggle expand all rows"}
-                          >
-                            <ChevronsUpDown className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
-                      <DraggableColumnHeader
-                        header={header}
-                        sortable={sortable}
-                        index={index}
-                        totalColumns={headerGroup.headers.length}
-                      />
-                      {index < headerGroup.headers.length - 1 && (
-                        <div className="absolute top-0 right-0 h-full w-px bg-slate-300 dark:bg-slate-700" />
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 h-[0.5px] bg-slate-300 dark:bg-slate-700" />
-                    </th>
-                  ))}
+                  {headerGroup.headers.map((header, index) => {
+                    const columnDef = defaultColumns[index] as any;
+                    const columnWidth =
+                      columnSizes[index] ??
+                      columnDef.minSize ??
+                      columnDef.size ??
+                      120;
+
+                    return (
+                      <th
+                        key={`header-${index}`}
+                        className={clsx(
+                          "relative",
+                          index === headerGroup.headers.length - 1 &&
+                            "border-r border-slate-300 dark:border-slate-700",
+                        )}
+                        style={{
+                          width: `${columnWidth}px`,
+                          minWidth: `${columnWidth}px`,
+                          maxWidth: `${columnWidth}px`,
+                          height: HEADER_HEIGHT,
+                        }}
+                      >
+                        {index === 0 && onToggleAllRows !== undefined && (
+                          <div className="absolute left-1 top-1/2 z-10 -translate-y-1/2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onToggleAllRows(table)}
+                              className="h-6 w-6"
+                              aria-label={"Toggle expand all rows"}
+                            >
+                              <ChevronsUpDown className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                        <DraggableColumnHeader
+                          header={header}
+                          sortable={sortable}
+                          index={index}
+                          totalColumns={headerGroup.headers.length}
+                          onResizeStart={handleResizeStart}
+                          isResizing={resizingColumn === index}
+                        />
+                        {index < headerGroup.headers.length - 1 && (
+                          <div className="absolute right-0 top-0 h-full w-px bg-slate-300 dark:bg-slate-700" />
+                        )}
+                        <div className="absolute bottom-0 left-0 right-0 h-[0.5px] bg-slate-300 dark:bg-slate-700" />
+                      </th>
+                    );
+                  })}
                 </tr>
               ))}
             </thead>
-            <tbody className="text-[13px] divide-y divide-border">
+            <tbody className="divide-y divide-border text-[13px]">
               {rows.map((row, index) => (
                 <tr
                   key={row.id}
@@ -319,11 +379,11 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
                       : clsx(
                           "hover:bg-sky-50 dark:hover:bg-slate-700/50",
                           row.getCanExpand()
-                            ? "font-semibold cursor-pointer bg-muted"
+                            ? "cursor-pointer bg-muted font-semibold"
                             : row.depth > 0
-                            ? "bg-slate-50 dark:bg-slate-950/50"
-                            : "bg-white dark:bg-black"
-                        )
+                              ? "bg-slate-50 dark:bg-slate-950/50"
+                              : "bg-white dark:bg-black",
+                        ),
                   )}
                   onClick={(e: React.MouseEvent) => {
                     if (row.getCanExpand()) {
@@ -341,29 +401,34 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
                 >
                   <td
                     className={clsx(
-                      "h-[1px] sticky left-0 bottom-[-2px] z-[1]",
+                      "sticky bottom-[-2px] left-0 z-[1] h-[1px]",
                       checkboxMode === "on_hover"
                         ? clsx(
-                            "opacity-0 group-hover:opacity-100 !border-0 !outline-none pt-[1px] px-0 pb-0 m-0",
+                            "m-0 !border-0 px-0 pb-0 pt-[1px] opacity-0 !outline-none group-hover:opacity-100",
                             selectedIds?.includes(row.id ?? "") &&
-                              "!opacity-100"
+                              "!opacity-100",
                           )
                         : "",
-                      checkboxMode === "never" && "hidden"
+                      checkboxMode === "never" && "hidden",
                     )}
-                    style={{ verticalAlign: "middle" }}
+                    style={{
+                      verticalAlign: "middle",
+                      width: CHECKBOX_COLUMN_WIDTH,
+                      minWidth: CHECKBOX_COLUMN_WIDTH,
+                      maxWidth: CHECKBOX_COLUMN_WIDTH,
+                    }}
                   >
                     <div
                       className={clsx(
-                        "flex justify-center items-center w-full h-full",
+                        "flex h-full w-full items-center justify-center px-2",
                         selectedIds?.includes(row.id ?? "") ||
                           (currentRow && currentRow.id === row.original.id)
                           ? "bg-inherit"
                           : row.getCanExpand()
-                          ? "bg-inherit"
-                          : row.depth > 0
-                          ? "bg-slate-50 dark:bg-slate-950/50"
-                          : "bg-white dark:bg-black"
+                            ? "bg-inherit"
+                            : row.depth > 0
+                              ? "bg-slate-50 dark:bg-slate-950/50"
+                              : "bg-white dark:bg-black",
                       )}
                     >
                       <Checkbox
@@ -372,139 +437,153 @@ export default function ThemedTable<T extends { id?: string; subRows?: T[] }>(
                       />
                     </div>
                   </td>
-                  {row.getVisibleCells().map((cell, i) => (
-                    <td
-                      key={cell.id}
-                      className={clsx(
-                        " text-slate-700 dark:text-slate-300 truncate select-none",
-                        !rowLink?.(row.original) &&
-                          clsx(
+                  {row.getVisibleCells().map((cell, i) => {
+                    const columnDef = defaultColumns[i] as any;
+                    const columnWidth =
+                      columnSizes[i] ??
+                      columnDef.minSize ??
+                      columnDef.size ??
+                      120;
+
+                    return (
+                      <td
+                        key={cell.id}
+                        className={clsx(
+                          "select-none text-slate-700 dark:text-slate-300",
+                          !rowLink?.(row.original) &&
+                            clsx(
+                              "py-3",
+                              i === 0 && "pr-2",
+                              i > 0 && "px-2",
+                              onRowSelect && "cursor-pointer",
+                            ),
+                          i === 0 && "relative",
+                          selectedIds?.includes(row.id ?? "") ||
+                            (currentRow && currentRow.id === row.original.id)
+                            ? "bg-inherit"
+                            : row.getCanExpand()
+                              ? "bg-inherit"
+                              : row.depth > 0
+                                ? "bg-slate-50 dark:bg-slate-950/50"
+                                : "bg-white dark:bg-black",
+                          i === row.getVisibleCells().length - 1 &&
+                            "border-r border-border",
+                        )}
+                        style={{
+                          width: `${columnWidth}px`,
+                          minWidth: `${columnWidth}px`,
+                          maxWidth: `${columnWidth}px`,
+                        }}
+                      >
+                        <ConditionalLink
+                          href={rowLink?.(row.original)}
+                          className={clsx(
+                            "block h-full w-full",
                             "py-3",
                             i === 0 && "pr-2",
                             i > 0 && "px-2",
-                            onRowSelect && "cursor-pointer"
-                          ),
-                        i === 0 && "relative",
-                        selectedIds?.includes(row.id ?? "") ||
-                          (currentRow && currentRow.id === row.original.id)
-                          ? "bg-inherit"
-                          : row.getCanExpand()
-                          ? "bg-inherit"
-                          : row.depth > 0
-                          ? "bg-slate-50 dark:bg-slate-950/50"
-                          : "bg-white dark:bg-black",
-                        i === row.getVisibleCells().length - 1 &&
-                          "border-r border-border"
-                      )}
-                      style={{
-                        maxWidth: cell.column.getSize(),
-                      }}
-                    >
-                      <ConditionalLink
-                        href={rowLink?.(row.original)}
-                        className={clsx(
-                          "block w-full h-full",
-                          "py-3",
-                          i === 0 && "pr-2",
-                          i > 0 && "px-2"
-                        )}
-                      >
-                        <div
-                          className={clsx("flex items-center gap-1")}
-                          style={
-                            i === 0
-                              ? {
-                                  paddingLeft: `${
-                                    row.depth * 24 +
-                                    (onToggleAllRows !== undefined ? 24 : 0) +
-                                    (row.getCanExpand() ? 0 : 8)
-                                  }px`,
-                                }
-                              : {}
-                          }
+                          )}
                         >
-                          {i === 0 &&
-                            (() => {
-                              const getAncestorPath = (
-                                currentRow: Row<T>
-                              ): string | undefined => {
-                                if (currentRow.depth === 0) {
-                                  return (currentRow.original as any)
-                                    ?.path as string;
+                          <div
+                            className={clsx("flex items-center gap-1")}
+                            style={
+                              i === 0
+                                ? {
+                                    paddingLeft: `${
+                                      row.depth * 24 +
+                                      (onToggleAllRows !== undefined ? 24 : 0) +
+                                      (row.getCanExpand() ? 0 : 8)
+                                    }px`,
+                                  }
+                                : {}
+                            }
+                          >
+                            {i === 0 &&
+                              (() => {
+                                const getAncestorPath = (
+                                  currentRow: Row<T>,
+                                ): string | undefined => {
+                                  if (currentRow.depth === 0) {
+                                    return (currentRow.original as any)
+                                      ?.path as string;
+                                  }
+                                  let currentParent = currentRow.getParentRow();
+                                  while (
+                                    currentParent &&
+                                    currentParent.depth > 0
+                                  ) {
+                                    currentParent =
+                                      currentParent.getParentRow();
+                                  }
+                                  return currentParent
+                                    ? ((currentParent.original as any)
+                                        ?.path as string)
+                                    : undefined;
+                                };
+
+                                const ancestorPath = getAncestorPath(row);
+                                const groupColorClass =
+                                  (ancestorPath &&
+                                    topLevelPathColorMap[ancestorPath]) ||
+                                  "bg-transparent";
+
+                                if (groupColorClass !== "bg-transparent") {
+                                  return (
+                                    <div
+                                      className={clsx(
+                                        "absolute bottom-0 left-0 top-0 z-30 w-1",
+                                        groupColorClass,
+                                      )}
+                                    />
+                                  );
                                 }
-                                let currentParent = currentRow.getParentRow();
-                                while (
-                                  currentParent &&
-                                  currentParent.depth > 0
-                                ) {
-                                  currentParent = currentParent.getParentRow();
-                                }
-                                return currentParent
-                                  ? ((currentParent.original as any)
-                                      ?.path as string)
-                                  : undefined;
-                              };
+                                return null;
+                              })()}
 
-                              const ancestorPath = getAncestorPath(row);
-                              const groupColorClass =
-                                (ancestorPath &&
-                                  topLevelPathColorMap[ancestorPath]) ||
-                                "bg-transparent";
-
-                              if (groupColorClass !== "bg-transparent") {
-                                return (
-                                  <div
-                                    className={clsx(
-                                      "absolute left-0 top-0 bottom-0 w-1 z-30",
-                                      groupColorClass
-                                    )}
-                                  />
-                                );
-                              }
-                              return null;
-                            })()}
-
-                          {i === 0 && row.getCanExpand() && (
-                            <button
-                              {...{
-                                onClick: row.getToggleExpandedHandler(),
-                                style: { cursor: "pointer" },
-                                "data-expander": true,
-                              }}
-                              className="p-0.5"
-                            >
-                              {row.getIsExpanded() ? (
-                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              )}
-                            </button>
-                          )}
-                          {dataLoading &&
-                          (cell.column.id == "requestText" ||
-                            cell.column.id == "responseText") ? (
-                            <span
-                              className={clsx(
-                                "w-full flex flex-grow",
-                                (cell.column.id == "requestText" ||
-                                  cell.column.id == "responseText") &&
-                                  dataLoading
-                                  ? "animate-pulse bg-slate-200 rounded-md"
-                                  : "hidden"
-                              )}
-                            >
-                              &nbsp;
-                            </span>
-                          ) : (
-                            flexRender(
-                              cell.column.columnDef.cell,
-                              cell.getContext()
-                            )
-                          )}
-                        </div>
-                      </ConditionalLink>
-                    </td>
-                  ))}
+                            {i === 0 && row.getCanExpand() && (
+                              <button
+                                {...{
+                                  onClick: row.getToggleExpandedHandler(),
+                                  style: { cursor: "pointer" },
+                                  "data-expander": true,
+                                }}
+                                className="p-0.5"
+                              >
+                                {row.getIsExpanded() ? (
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </button>
+                            )}
+                            {dataLoading &&
+                            (cell.column.id == "requestText" ||
+                              cell.column.id == "responseText") ? (
+                              <span
+                                className={clsx(
+                                  "flex w-full flex-grow",
+                                  (cell.column.id == "requestText" ||
+                                    cell.column.id == "responseText") &&
+                                    dataLoading
+                                    ? "animate-pulse rounded-md bg-slate-200"
+                                    : "hidden",
+                                )}
+                              >
+                                &nbsp;
+                              </span>
+                            ) : (
+                              <div className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                                {flexRender(
+                                  cell.column.columnDef.cell,
+                                  cell.getContext(),
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </ConditionalLink>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

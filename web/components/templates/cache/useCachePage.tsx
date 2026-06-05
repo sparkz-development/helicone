@@ -30,7 +30,7 @@ export const useCachePageClickHouse = ({
   dbIncrement,
 }: CachePageData) => {
   const createParams = (
-    userFilters: any
+    userFilters: any,
   ): BackendMetricsCall<any>["params"] => ({
     timeFilter,
     userFilters,
@@ -57,7 +57,7 @@ export const useCachePageClickHouse = ({
       key: "cacheHitsOverTime",
       postProcess: (data) => {
         return resultMap(data, (d) =>
-          d.map((d) => ({ count: +d.count, time: new Date(d.time) }))
+          d.map((d) => ({ count: +d.count, time: new Date(d.time) })),
         );
       },
     }),
@@ -84,7 +84,7 @@ export const useCachePageClickHouse = ({
         },
       },
       false,
-      true
+      true,
     ),
     totalSavings: useGetCacheTotalSavings(timeFilter),
     timeSaved: useGetCacheTimeSaved(timeFilter),
@@ -126,7 +126,7 @@ export const useCachePageClickHouse = ({
               right: currentCondition,
             };
           },
-          null
+          null,
         )
       : null;
 
@@ -138,7 +138,7 @@ export const useCachePageClickHouse = ({
     topRequestsFilter || defaultFilter,
     {
       created_at: "desc",
-    }
+    },
   );
 
   function isLoading(x: UseQueryResult<any>) {
@@ -154,14 +154,35 @@ export const useCachePageClickHouse = ({
     );
   }
 
-  const isAnyLoading =
-    Object.values(overTimeData).some((x) => isLoading(x)) ||
-    Object.values(metrics).some((x) => isLoading(x)) ||
-    isRequestsLoading(topSourceRequestsWithBodies);
+  const loadingStates = {
+    cacheHits: isLoading(overTimeData.cacheHits),
+    totalCacheHits: isLoading(metrics.totalCacheHits),
+    totalRequests: isLoading(metrics.totalRequests),
+    totalSavings: isLoading(metrics.totalSavings),
+    timeSaved: isLoading(metrics.timeSaved),
+    topRequests: isLoading(metrics.topRequests),
+    avgLatency: isLoading(metrics.avgLatency),
+    avgLatencyCached: isLoading(metrics.avgLatencyCached),
+    topSourceRequests: isRequestsLoading(topSourceRequestsWithBodies),
+  };
+
+  const isAnyLoading = Object.values(loadingStates).some(Boolean);
+
+  const hasCacheData = (() => {
+    if (loadingStates.totalCacheHits) return null;
+
+    const cacheHits = metrics.totalCacheHits.data?.data;
+    if (cacheHits === undefined || cacheHits === null) {
+      return false;
+    }
+    return +cacheHits > 0;
+  })();
 
   return {
     overTimeData,
     metrics: { ...metrics, topSourceRequestsWithBodies },
     isAnyLoading,
+    loadingStates,
+    hasCacheData,
   };
 };

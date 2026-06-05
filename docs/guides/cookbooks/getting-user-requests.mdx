@@ -9,6 +9,14 @@ import QuestionsSection from "/snippets/questions-section.mdx";
 
 The [Request API](/rest/request/post-v1requestquery) allows you to build a request, where you can specify filtering criteria to retrieve all requests made by a user.
 
+<Note>
+  **API Endpoint Note:** This guide uses the `/v1/request/query` endpoint which is optimized for small to medium datasets.
+
+  For **large datasets or bulk exports**, use the [/v1/request/query-clickhouse](/rest/request/post-v1requestquery-clickhouse) endpoint instead, which has a different filter structure:
+  - `/query` uses `request` wrapper: `{"filter": {"request": {"user_id": {...}}}}`
+  - `/query-clickhouse` uses `request_response_rmt` wrapper: `{"filter": {"request_response_rmt": {"user_id": {...}}}}`
+</Note>
+
 <Frame>
   <img
     src="/images/use-cases/example-user-request.png"
@@ -30,8 +38,8 @@ Here's an example to get all the requests where `user_id` is `abc@email.com`.
 ```bash
 curl --request POST \
   --url https://api.helicone.ai/v1/request/query \
-  --header 'Content-Type: application/json' \
-  --header 'authorization: Bearer sk-<your-helicone-api-key>' \
+  --header "Content-Type: application/json" \
+  --header "authorization: Bearer $HELICONE_API_KEY" \
   --data '{
   "filter": {
     "request": {
@@ -57,15 +65,15 @@ You can structure your query to add any number of filters.
 ```bash
 curl --request POST \
   --url https://api.helicone.ai/v1/request/query \
-  --header 'Content-Type: application/json' \
-  --header 'authorization: Bearer sk-<your-helicone-api-key>' \
+  --header "Content-Type: application/json" \
+  --header "authorization: Bearer $HELICONE_API_KEY" \
   --data '{
   "filter": {
     "operator": "and",
     "right": {
       "request": {
         "model": {
-          "contains": "gpt-4"
+          "contains": "gpt-4o-mini"
         }
       }
     },

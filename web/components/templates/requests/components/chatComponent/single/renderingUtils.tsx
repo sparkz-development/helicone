@@ -1,19 +1,39 @@
 import { Message } from "@helicone-package/llm-mapper/types";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { JsonRenderer } from "./JsonRenderer";
 import { isJSON } from "@helicone-package/llm-mapper/utils/contentHelpers";
+import { ImageModal } from "./images/ImageModal";
 
 export const OpenAIImage: React.FC<{
   imageUrl: string;
   selectedProperties?: Record<string, string>;
   isHeliconeTemplate?: boolean;
 }> = ({ imageUrl, selectedProperties, isHeliconeTemplate }) => {
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={imageUrl} alt="" width={600} height={600} />;
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={imageUrl}
+        alt=""
+        width={600}
+        height={600}
+        className="cursor-pointer transition-opacity hover:opacity-90"
+        onClick={() => setIsModalOpen(true)}
+      />
+
+      <ImageModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        imageSrc={imageUrl}
+      />
+    </>
+  );
 };
 
 export const UnsupportedImage: React.FC = () => (
-  <div className="h-[150px] w-[200px] bg-white dark:bg-black border border-gray-300 dark:border-gray-700 text-center items-center flex justify-center text-xs italic text-gray-500">
+  <div className="flex h-[150px] w-[200px] items-center justify-center border border-gray-300 bg-white text-center text-xs italic text-gray-500 dark:border-gray-700 dark:bg-black">
     Unsupported Image Type
   </div>
 );
@@ -41,11 +61,11 @@ export const FunctionMessage: React.FC<{
           className="flex flex-col space-y-2"
           key={`${index}-${toolCall.name}`}
         >
-          <code className="text-xs whitespace-pre-wrap font-semibold">
+          <code className="whitespace-pre-wrap text-xs font-semibold">
             {toolCall.name}
           </code>
           {argumentString && (
-            <pre className="text-xs whitespace-pre-wrap bg-gray-50 dark:bg-gray-950 p-2 rounded-lg overflow-auto">
+            <pre className="overflow-auto whitespace-pre-wrap rounded-lg bg-gray-50 p-2 text-xs dark:bg-gray-950">
               {isJSON(argumentString) ? (
                 <JsonRenderer data={JSON.parse(argumentString)} />
               ) : (

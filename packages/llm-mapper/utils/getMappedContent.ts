@@ -11,12 +11,14 @@ import {
   Message,
 } from "../types";
 
-import { modelCost } from "../../cost/costCalc";
+import { mapLlamaRequest } from "../mappers/llama/chat";
+import { mapVercelRequest } from "../mappers/vercel/chat";
 import { mapBlackForestLabsImage } from "../mappers/black-forest-labs/image";
 import { mapOpenAIAssistant } from "../mappers/openai/assistant";
 import { mapOpenAIModeration } from "../mappers/openai/moderation";
 import { mapRealtimeRequest } from "../mappers/openai/realtime";
 import { mapTool } from "../mappers/tool";
+import { mapData } from "../mappers/data";
 import { MapperFn } from "../mappers/types";
 import { mapVectorDB } from "../mappers/vector-db";
 import { getMapperTypeFromHeliconeRequest } from "./getMapperType";
@@ -25,10 +27,16 @@ import { mapOpenAIResponse } from "../mappers/openai/responses";
 const MAX_PREVIEW_LENGTH = 1_000;
 
 export const MAPPERS: Record<MapperType, MapperFn<any, any>> = {
+  // the request-response will be converted to openai format if necessary
+  // thus uses the same mapper.
+  "ai-gateway-chat": mapOpenAIRequest,
+  "ai-gateway-responses": mapOpenAIResponse,
   "openai-chat": mapOpenAIRequest,
   "openai-response": mapOpenAIResponse,
   "anthropic-chat": mapAnthropicRequest,
   "gemini-chat": mapGeminiPro,
+  "llama-chat": mapLlamaRequest,
+  "vercel-chat": mapVercelRequest,
   "black-forest-labs-image": mapBlackForestLabsImage,
   "openai-assistant": mapOpenAIAssistant,
   "openai-image": mapDalleRequest,
@@ -38,6 +46,7 @@ export const MAPPERS: Record<MapperType, MapperFn<any, any>> = {
   "openai-realtime": mapRealtimeRequest,
   "vector-db": mapVectorDB,
   tool: mapTool,
+  data: mapData,
   unknown: mapOpenAIRequest,
 } satisfies Record<MapperType, MapperFn<any, any>>;
 
@@ -67,24 +76,13 @@ const metaDataFromHeliconeRequest = (
     countryCode: heliconeRequest.country_code,
     cacheEnabled: heliconeRequest.cache_enabled ?? false,
     cacheReferenceId: heliconeRequest.cache_reference_id ?? null,
-    cost: modelCost({
-      provider: heliconeRequest.provider,
-      model: model,
-
-      sum_prompt_tokens: heliconeRequest.prompt_tokens || 0,
-      prompt_cache_write_tokens: heliconeRequest.prompt_cache_write_tokens || 0,
-      prompt_cache_read_tokens: heliconeRequest.prompt_cache_read_tokens || 0,
-
-      prompt_audio_tokens: heliconeRequest.prompt_audio_tokens || 0,
-      completion_audio_tokens: heliconeRequest.completion_audio_tokens || 0,
-
-      sum_completion_tokens: heliconeRequest.completion_tokens || 0,
-
-      sum_tokens: heliconeRequest.total_tokens || 0,
-    }),
+    cost: heliconeRequest.cost ?? 0,
     createdAt: heliconeRequest.request_created_at,
     path: heliconeRequest.request_path,
     completionTokens: heliconeRequest.completion_tokens,
+    reasoningTokens: heliconeRequest.reasoning_tokens,
+    promptCacheWriteTokens: heliconeRequest.prompt_cache_write_tokens,
+    promptCacheReadTokens: heliconeRequest.prompt_cache_read_tokens,
     promptTokens: heliconeRequest.prompt_tokens,
     totalTokens: heliconeRequest.total_tokens,
     latency: heliconeRequest.delay_ms,
@@ -102,6 +100,11 @@ const metaDataFromHeliconeRequest = (
     provider: heliconeRequest.provider,
     timeToFirstToken: heliconeRequest.time_to_first_token,
     scores: heliconeRequest.scores,
+    promptId: heliconeRequest.prompt_id ?? null,
+    promptVersion: heliconeRequest.prompt_version ?? null,
+    targetUrl: heliconeRequest.target_url ?? null,
+    requestReferrer: heliconeRequest.request_referrer ?? null,
+    storageLocation: heliconeRequest.storage_location ?? null,
   };
 };
 
@@ -112,15 +115,19 @@ const getUnsanitizedMappedContent = ({
   mapperType: MapperType;
   heliconeRequest: HeliconeRequest;
 }): MappedLLMRequest => {
-  const mapper = MAPPERS[mapperType];
+  let mapper = MAPPERS[mapperType];
   if (!mapper) {
     throw new Error(`Mapper not found: ${JSON.stringify(mapperType)}`);
   }
   let result: ReturnType<MapperFn<any, any>>;
+
+  let requestBody = heliconeRequest.request_body;
+  let responseBody = heliconeRequest.response_body;
+
   try {
     result = mapper({
-      request: heliconeRequest.request_body,
-      response: heliconeRequest.response_body,
+      request: requestBody,
+      response: responseBody,
       statusCode: heliconeRequest.response_status,
       model: heliconeRequest.model,
     });
@@ -128,13 +135,13 @@ const getUnsanitizedMappedContent = ({
     result = {
       preview: {
         concatenatedMessages: [],
-        request: JSON.stringify(heliconeRequest.request_body),
-        response: JSON.stringify(heliconeRequest.response_body),
+        request: JSON.stringify(requestBody),
+        response: JSON.stringify(responseBody),
         fullRequestText: () => {
-          return JSON.stringify(heliconeRequest.request_body);
+          return JSON.stringify(requestBody);
         },
         fullResponseText: () => {
-          return JSON.stringify(heliconeRequest.response_body);
+          return JSON.stringify(responseBody);
         },
       },
       schema: {
@@ -152,8 +159,8 @@ const getUnsanitizedMappedContent = ({
     model: heliconeRequest.model,
     id: heliconeRequest.request_id,
     raw: {
-      request: heliconeRequest.request_body,
-      response: heliconeRequest.response_body,
+      request: requestBody,
+      response: responseBody,
     },
     heliconeMetadata: metaDataFromHeliconeRequest(
       heliconeRequest,
@@ -201,6 +208,11 @@ const sanitizeMappedContent = (
         ? typeof message.content === "string"
           ? message.content
           : JSON.stringify(message.content)
+        : "",
+      reasoning: message.reasoning
+        ? typeof message.reasoning === "string"
+          ? message.reasoning
+          : JSON.stringify(message.reasoning)
         : "",
     };
   };

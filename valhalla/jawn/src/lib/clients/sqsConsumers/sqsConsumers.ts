@@ -75,7 +75,6 @@ async function withMessages({
 
   if (messages.length === 0) {
     await new Promise((resolve) => setTimeout(resolve, 10_000));
-    console.log("No messages to process");
     return;
   }
 
@@ -115,6 +114,23 @@ export async function consumeRequestResponseLogs() {
     await withMessages({
       queueUrl: QUEUE_URLS.requestResponseLogs,
       sizeSetting: "sqs:request-response-logs",
+      process: async (messages) => {
+        const mappedMessages = messages.map((message) =>
+          mapMessageDates(JSON.parse(message.Body ?? "{}"))
+        );
+
+        const logManager = new LogManager();
+        await logManager.processLogEntries(mappedMessages, {});
+      },
+    });
+  }
+}
+
+export async function consumeRequestResponseLogsLowPriority() {
+  while (true) {
+    await withMessages({
+      queueUrl: QUEUE_URLS.requestResponseLogsLowPriority,
+      sizeSetting: "sqs:request-response-logs", // TODO: Add a new setting for this
       process: async (messages) => {
         const mappedMessages = messages.map((message) =>
           mapMessageDates(JSON.parse(message.Body ?? "{}"))

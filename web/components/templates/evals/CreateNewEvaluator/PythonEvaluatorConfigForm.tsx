@@ -13,6 +13,7 @@ import { useEvalPanelStore } from "../store/evalPanelStore";
 import { CompositeOption, TestFunction } from "../testing/types";
 import { useEvalFormStore } from "../store/evalFormStore";
 import { useEvalConfigStore } from "../store/evalConfigStore";
+import { logger } from "@/lib/telemetry/logger";
 import { H3, Muted } from "@/components/ui/typography";
 import { Separator } from "@/components/ui/separator";
 
@@ -111,7 +112,7 @@ export const PythonEvaluatorConfigForm: React.FC<{
         } else {
           notification.setNotification(
             "Evaluator updated successfully",
-            "success"
+            "success",
           );
           invalidateEvaluators.invalidate();
           onSubmit();
@@ -132,14 +133,14 @@ export const PythonEvaluatorConfigForm: React.FC<{
         } else {
           notification.setNotification(
             "Evaluator created successfully",
-            "success"
+            "success",
           );
           invalidateEvaluators.invalidate();
           onSubmit();
         }
       }
     } catch (error) {
-      console.error("Error submitting Python evaluator:", error);
+      logger.error({ error }, "Error submitting Python evaluator");
       notification.setNotification("An error occurred", "error");
     }
   };
@@ -180,7 +181,7 @@ export const PythonEvaluatorConfigForm: React.FC<{
   };
 
   return (
-    <Col className="h-full flex flex-col overflow-hidden">
+    <Col className="flex h-full flex-col overflow-hidden">
       <ScrollArea className="flex-grow overflow-y-auto">
         <div className="px-4 py-4">
           <Col className="space-y-6">
@@ -192,7 +193,7 @@ export const PythonEvaluatorConfigForm: React.FC<{
                 </Muted>
               </div>
               <Separator className="my-2" />
-              <div className="space-y-4 mt-4">
+              <div className="mt-4 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Evaluator Name</Label>
                   <Input
@@ -204,7 +205,7 @@ export const PythonEvaluatorConfigForm: React.FC<{
                     disabled={!!existingEvaluatorId}
                   />
                   {existingEvaluatorId && (
-                    <div className="text-xs text-muted-foreground mt-1">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       Evaluator names cannot be changed after creation
                     </div>
                   )}
@@ -240,7 +241,7 @@ export const PythonEvaluatorConfigForm: React.FC<{
                 setText={setPythonCode}
                 language={"python"}
                 monaco={true}
-                className="min-h-[300px] border rounded-md"
+                className="min-h-[300px] rounded-md border"
               />
             </div>
           </Col>

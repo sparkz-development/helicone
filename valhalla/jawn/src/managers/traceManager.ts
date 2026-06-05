@@ -1,5 +1,5 @@
 import type { Log, KafkaMessageContents } from "../lib/handlers/HandlerContext";
-import { HeliconeQueueProducer } from "../lib/clients/HeliconeQuequeProducer";
+import { HeliconeQueueProducer } from "../lib/clients/HeliconeQueueProducer";
 import { S3Client } from "../lib/shared/db/s3Client";
 import { randomUUID } from "crypto";
 import { AuthParams } from "../packages/common/auth/types";
@@ -7,8 +7,8 @@ export class TraceManager {
   private s3Client: S3Client;
   constructor() {
     this.s3Client = new S3Client(
-      process.env.S3_ACCESS_KEY ?? "",
-      process.env.S3_SECRET_KEY ?? "",
+      process.env.S3_ACCESS_KEY || undefined,
+      process.env.S3_SECRET_KEY || undefined,
       process.env.S3_ENDPOINT ?? "",
       process.env.S3_BUCKET_NAME ?? "",
       (process.env.S3_REGION as "us-west-2" | "eu-west-1") ?? "us-west-2"

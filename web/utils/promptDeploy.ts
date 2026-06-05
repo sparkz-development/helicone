@@ -1,6 +1,7 @@
 import { providerConfigs } from "@helicone-package/cost/unified/providers";
 import { Provider, ProviderConfig } from "@helicone-package/cost/unified/types";
 import { StateInputs, StateParameters } from "@/types/prompt-state";
+import { logger } from "@/lib/telemetry/logger";
 
 /**
  * Environment variables required for each provider
@@ -13,8 +14,8 @@ export const providerEnvVars: Record<Provider, { vars: string[] }> =
         {
           vars: config.envVars,
         },
-      ]
-    )
+      ],
+    ),
   ) as Record<Provider, { vars: string[] }>;
 
 /**
@@ -32,7 +33,7 @@ export const getEnvFileExample = (provider: Provider): string => {
 export const getPromptDeploymentExample = (
   promptId: string,
   variables: StateInputs[] = [],
-  parameters?: StateParameters
+  parameters?: StateParameters,
 ) => {
   // Format variables for code examples
   const hasVariables = variables.length > 0;
@@ -46,7 +47,7 @@ export const getPromptDeploymentExample = (
 // model, temperature, messages inferred from id
 const response = await generate("${promptId}");
 
-console.log(response);`;
+logger.info({ response }, "Generated response");`;
 
   // With variables example
   const variablesExample = `import { generate } from "@helicone/generate";
@@ -58,7 +59,7 @@ const response = await generate({
   }
 });
 
-console.log(response);`;
+logger.info({ response }, "Generated response");`;
 
   // Chat example
   const chatExample = `import { generate } from "@helicone/generate";
@@ -71,14 +72,14 @@ chat.push("can you help me with my homework?");
 
 // Assistant
 chat.push(await generate({ promptId, chat }));
-console.log(chat[chat.length - 1]);
+logger.info({ response: chat[chat.length - 1] }, "Chat response");
 
 // User
 chat.push("thanks, the first question is what is 2+2?");
 
 // Assistant
 chat.push(await generate({ promptId, chat }));
-console.log(chat[chat.length - 1]);`;
+logger.info({ response: chat[chat.length - 1] }, "Chat response");`;
 
   return {
     simpleExample,
@@ -92,7 +93,7 @@ console.log(chat[chat.length - 1]);`;
  */
 export const getReactComponentExample = (
   promptId: string,
-  variables: StateInputs[] = []
+  variables: StateInputs[] = [],
 ) => {
   // Format variables for code examples
   const hasVariables = variables.length > 0;
@@ -105,7 +106,7 @@ export const getReactComponentExample = (
       (v) =>
         `const [${v.name}, set${
           v.name.charAt(0).toUpperCase() + v.name.slice(1)
-        }] = useState("${v.value || "value"}");`
+        }] = useState("${v.value || "value"}");`,
     )
     .join("\n  ");
 
@@ -127,17 +128,17 @@ export function HeliconePromptComponent() {
     try {
       const result = await generate({
         promptId: "${promptId}",${
-    hasVariables
-      ? `
+          hasVariables
+            ? `
         inputs: {
 ${formattedInputsObject}
         },`
-      : ""
-  }
+            : ""
+        }
       });
       setResponse(result);
     } catch (error) {
-      console.error("Error generating response:", error);
+      logger.error({ error }, "Error generating response");
     } finally {
       setIsLoading(false);
     }
@@ -161,7 +162,7 @@ ${formattedInputsObject}
           }(e.target.value)}
           className="w-full p-2 border rounded"
         />
-      </div>`
+      </div>`,
               )
               .join("")
           : ""
@@ -191,7 +192,7 @@ ${formattedInputsObject}
  */
 export const getNodeScriptExample = (
   promptId: string,
-  variables: StateInputs[] = []
+  variables: StateInputs[] = [],
 ) => {
   // Format variables for code examples
   const formattedVariables = variables
@@ -206,19 +207,19 @@ async function main() {
   try {
     const response = await generate({
       promptId: "${promptId}",${
-    variables.length > 0
-      ? `
+        variables.length > 0
+          ? `
       inputs: {
         ${formattedVariables}
       },`
-      : ""
-  }
+          : ""
+      }
     });
     
     console.log("Generated response:");
-    console.log(response);
+    console.log({ response }, "Response");
   } catch (error) {
-    console.error("Error generating response:", error);
+    console.error("Error generating response", { error }, "Error generating response");
   }
 }
 

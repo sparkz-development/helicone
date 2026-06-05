@@ -12,6 +12,7 @@ export type ProviderResponse = {
   };
   textBody?: string;
   status: number;
+  cost?: number;
   headers: Record<string, string>;
 };
 
@@ -56,8 +57,16 @@ export interface HeliconeEventVectorDB {
   [key: string]: any;
 }
 
+export interface HeliconeEventData {
+  _type: "data";
+  name: string;
+  meta?: Record<string, any>;
+  [key: string]: any;
+}
+
 export type HeliconeCustomEventRequest =
   | HeliconeEventTool
-  | HeliconeEventVectorDB;
+  | HeliconeEventVectorDB
+  | HeliconeEventData;
 
 export type HeliconeLogRequest = ILogRequest | HeliconeCustomEventRequest;

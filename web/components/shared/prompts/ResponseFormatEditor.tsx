@@ -2,6 +2,7 @@ import MarkdownEditor from "@/components/shared/markdownEditor";
 import UniversalPopup from "@/components/shared/universal/Popup";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
+import { logger } from "@/lib/telemetry/logger";
 
 interface ResponseFormatEditorProps {
   isOpen: boolean;
@@ -17,7 +18,7 @@ export default function ResponseFormatEditor({
   onSave,
 }: ResponseFormatEditorProps) {
   const [schemaJson, setSchemaJson] = useState(
-    initialSchema ? JSON.stringify(initialSchema, null, 2) : "{}"
+    initialSchema ? JSON.stringify(initialSchema, null, 2) : "{}",
   );
 
   const isValidJson = (jsonString: string): boolean => {
@@ -40,7 +41,7 @@ export default function ResponseFormatEditor({
       onSave(parsedSchema);
       onClose();
     } catch (e) {
-      console.error("Invalid response format JSON:", e);
+      logger.error({ error: e }, "Invalid response format JSON");
       // Potentially show an error message to the user
     }
   };
@@ -49,7 +50,7 @@ export default function ResponseFormatEditor({
   useEffect(() => {
     if (isOpen) {
       setSchemaJson(
-        initialSchema ? JSON.stringify(initialSchema, null, 2) : "{}"
+        initialSchema ? JSON.stringify(initialSchema, null, 2) : "{}",
       );
     }
   }, [isOpen, initialSchema]); // Add dependencies
@@ -67,12 +68,12 @@ export default function ResponseFormatEditor({
             text={schemaJson}
             setText={setSchemaJson} // Directly set the state
             language="json"
-            className="h-full bg-white dark:bg-black rounded-lg"
+            className="h-full rounded-lg bg-white dark:bg-black"
           />
         </div>
-        <div className="flex flex-row justify-end items-center gap-2">
+        <div className="flex flex-row items-center justify-end gap-2">
           {!isValidJson(schemaJson) && (
-            <p className="text-red-500 text-sm mr-auto">Invalid JSON Schema</p>
+            <p className="mr-auto text-sm text-red-500">Invalid JSON Schema</p>
           )}
           <Button variant="outline" onClick={onClose}>
             Cancel

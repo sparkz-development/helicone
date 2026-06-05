@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useOrg } from "../../components/layout/org/organizationContext";
-import { HeliconeRequest } from "../../lib/api/request/request";
+import { HeliconeRequest } from "@helicone-package/llm-mapper/types";
 import { $JAWN_API, getJawnClient } from "../../lib/clients/jawn";
 import { Result } from "@/packages/common/result";
 import { FilterNode } from "@helicone-package/filters/filterDefs";
@@ -9,6 +9,7 @@ import { placeAssetIdValues } from "../lib/requestTraverseHelper";
 import { SortLeafRequest } from "../lib/sorts/requests/sorts";
 import { MAX_EXPORT_ROWS } from "@/lib/constants";
 import { TSessions } from "@/components/templates/sessions/sessionsPage";
+import { logger } from "@/lib/telemetry/logger";
 
 function formatDateForClickHouse(date: Date): string {
   return date.toISOString().slice(0, 19).replace("T", " ");
@@ -75,7 +76,7 @@ export const useGetRequestWithBodies = (requestId: string) => {
           if (response.data?.data?.asset_urls) {
             content = placeAssetIdValues(
               response.data?.data?.asset_urls,
-              content
+              content,
             );
           }
           requestBodyCache.set(response.data?.data?.request_id, content);
@@ -99,7 +100,7 @@ export const useGetRequestsWithBodies = (
   advancedFilter: FilterNode,
   sortLeaf: SortLeafRequest,
   isLive: boolean = false,
-  isCached: boolean = false
+  isCached: boolean = false,
 ) => {
   // First query to fetch the initial request data
   const requestQuery = $JAWN_API.useQuery(
@@ -118,7 +119,7 @@ export const useGetRequestsWithBodies = (
       refetchOnWindowFocus: false,
       refetchInterval: isLive ? 1_000 : false,
       keepPreviousData: true,
-    }
+    },
   );
 
   // Second query to fetch and process request bodies
@@ -148,8 +149,9 @@ export const useGetRequestsWithBodies = (
             try {
               const contentResponse = await fetch(request.signed_body_url);
               if (!contentResponse.ok) {
-                console.error(
-                  `Error fetching request body: ${contentResponse.status}`
+                logger.error(
+                  { status: contentResponse.status },
+                  "Error fetching request body",
                 );
                 return request;
               }
@@ -173,13 +175,13 @@ export const useGetRequestsWithBodies = (
                 response_body: content.response,
               };
             } catch (error) {
-              console.error("Error processing request body:", error);
+              logger.error({ error }, "Error processing request body");
               return request;
             }
-          }) ?? []
+          }) ?? [],
         );
       } catch (error) {
-        console.error("Error processing requests with bodies:", error);
+        logger.error({ error }, "Error processing requests with bodies");
         return [];
       }
     },
@@ -189,7 +191,7 @@ export const useGetRequestsWithBodies = (
     const rawRequests = requestQuery.data?.data ?? [];
     return rawRequests.map((rawRequest) => {
       const requestWithBody = requests?.find(
-        (request) => request.request_id === rawRequest.request_id
+        (request) => request.request_id === rawRequest.request_id,
       );
       if (requestWithBody) {
         return requestWithBody;
@@ -213,24 +215,23 @@ const useGetRequestCount = (
   isLive = false,
   isCached = false,
 ) => {
-  return useQuery({
-    queryKey: ["requestsCount", filter, isCached],
-    queryFn: async (query) => {
-      const [_, filter, isLive, isCached] = query.queryKey as [string, FilterNode, boolean, boolean];
-      const processedFilter = processFilter(filter);
-      return await fetch("/api/request/count", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ filter: processedFilter, isCached }),
-      }).then((res) => res.json() as Promise<Result<number, string>>);
+  const processedFilter = processFilter(filter);
+  return $JAWN_API.useQuery(
+    "post",
+    "/v1/metrics/requestCount",
+    {
+      body: {
+        filter: processedFilter as any,
+        isCached,
+      },
     },
-    refetchOnWindowFocus: false,
-    refetchInterval: isLive ? 2_000 : false,
-    gcTime: 5 * 60 * 1000,
-  });
-}
+    {
+      refetchOnWindowFocus: false,
+      refetchInterval: isLive ? 2_000 : false,
+      gcTime: 5 * 60 * 1000,
+    },
+  );
+};
 
 const useGetRequests = (
   currentPage: number,
@@ -238,7 +239,7 @@ const useGetRequests = (
   advancedFilter: FilterNode,
   sortLeaf: SortLeafRequest,
   isCached: boolean = false,
-  isLive: boolean = false
+  isLive: boolean = false,
 ) => {
   return {
     requests: useGetRequestsWithBodies(
@@ -247,7 +248,7 @@ const useGetRequests = (
       advancedFilter,
       sortLeaf,
       isLive,
-      isCached
+      isCached,
     ),
     count: useGetRequestCount(advancedFilter, isLive, isCached),
   };
@@ -255,7 +256,7 @@ const useGetRequests = (
 
 const useGetRequestCountClickhouse = (
   startDateISO: string,
-  endDateISO: string
+  endDateISO: string,
 ) => {
   const { data, isLoading, refetch } = $JAWN_API.useQuery(
     "post",
@@ -281,7 +282,7 @@ const useGetRequestCountClickhouse = (
         },
       },
     },
-    { refetchOnWindowFocus: false }
+    { refetchOnWindowFocus: false },
   );
 
   return {
@@ -346,8 +347,9 @@ const getRequestBodiesBySession = async (sessions: TSessions[]) => {
         try {
           const contentResponse = await fetch(request.signed_body_url);
           if (!contentResponse.ok) {
-            console.error(
-              `Error fetching request body: ${contentResponse.status}`
+            logger.error(
+              { status: contentResponse.status },
+              "Error fetching request body",
             );
             return request;
           }
@@ -370,13 +372,16 @@ const getRequestBodiesBySession = async (sessions: TSessions[]) => {
             response_body: content.response,
           };
         } catch (error) {
-          console.error("Error processing request body:", error);
+          logger.error({ error }, "Error processing request body");
           return request;
         }
-      })
+      }),
     );
   } catch (error) {
-    console.error("Error fetching requests by session IDs with bodies:", error);
+    logger.error(
+      { error },
+      "Error fetching requests by session IDs with bodies",
+    );
     throw error;
   }
 };

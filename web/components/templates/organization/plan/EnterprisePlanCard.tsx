@@ -12,12 +12,12 @@ import { PlanFeatureCard } from "./PlanFeatureCard";
 
 export const EnterprisePlanCard = () => {
   return (
-    <div className="flex gap-6 lg:flex-row flex-col">
-      <Card className="max-w-3xl w-full h-fit">
+    <div className="flex flex-col gap-6 lg:flex-row">
+      <Card className="h-fit w-full max-w-3xl">
         <CardHeader>
-          <CardTitle className="text-lg font-medium flex items-end">
+          <CardTitle className="flex items-end text-lg font-medium">
             Enterprise{" "}
-            <span className="text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded-md ml-2 font-medium">
+            <span className="ml-2 rounded-md bg-purple-100 px-2 py-1 text-sm font-medium text-purple-700">
               Current plan
             </span>
           </CardTitle>
@@ -26,9 +26,9 @@ export const EnterprisePlanCard = () => {
             needs.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="flex flex-col gap-6">
           <Col className="gap-4">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               For detailed information about your Enterprise plan, including
               custom features, limits, and support options, please contact your
               account manager.
@@ -40,7 +40,7 @@ export const EnterprisePlanCard = () => {
         </CardContent>
       </Card>
 
-      <div className="space-y-6 w-full lg:w-[450px]">
+      <div className="w-full flex flex-col gap-6 lg:w-[450px]">
         <PlanFeatureCard
           title="Need to adjust your plan?"
           description="We're here to help you optimize your Enterprise plan for your evolving needs."

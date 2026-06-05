@@ -2,12 +2,24 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import Parser from "rss-parser";
 import { $JAWN_API, getJawnClient } from "../../lib/clients/jawn";
 import { components } from "../../lib/clients/jawnTypes/private";
+import { logger } from "@/lib/telemetry/logger";
 
 const useCreateAlertBanner = (onSuccess?: () => void) => {
-  const { mutate: createBanner, isPending: isCreatingBanner } =
-    $JAWN_API.useMutation("post", "/v1/admin/alert_banners", {
-      onSuccess,
-    });
+  const { mutate: createBanner, isPending: isCreatingBanner } = useMutation({
+    mutationKey: ["create-alert-banner"],
+    mutationFn: async (req: { title: string; message: string }) => {
+      const jawnClient = getJawnClient();
+      const { data, error } = await jawnClient.POST("/v1/admin/alert_banners", {
+        body: req,
+      });
+
+      if (!error) {
+        onSuccess && onSuccess();
+      }
+
+      return { data, error };
+    },
+  });
   return {
     createBanner,
     isCreatingBanner,
@@ -23,7 +35,7 @@ const useUpdateAlertBanner = (onSuccess?: () => void) => {
         "/v1/admin/alert_banners",
         {
           body: req,
-        }
+        },
       );
 
       if (!error) {
@@ -54,7 +66,7 @@ const useUpdateSetting = (onSuccess?: () => void) => {
         },
       });
 
-      console.log(`Updated setting ${req.name}`, data);
+      logger.info({ name: req.name, data }, "Updated setting");
 
       if (!error) {
         onSuccess && onSuccess();
@@ -71,7 +83,7 @@ const useUpdateSetting = (onSuccess?: () => void) => {
 
 const useGetSetting = (
   settingName: components["schemas"]["SettingName"],
-  onSuccess?: () => void
+  onSuccess?: () => void,
 ) => {
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["settings", settingName],
@@ -87,10 +99,10 @@ const useGetSetting = (
               name: settingName,
             },
           },
-        }
+        },
       );
 
-      console.log(`Received setting ${settingName}`, data);
+      logger.info({ settingName, data }, "Received setting");
       if (!error) {
         onSuccess && onSuccess();
       }
@@ -120,11 +132,11 @@ const useChangelog = () => {
     queryFn: async () => {
       try {
         const feed = await parser.parseURL(
-          "https://www.helicone.ai/rss/changelog.xml"
+          "https://www.helicone.ai/rss/changelog.xml",
         );
         return feed.items;
       } catch (err) {
-        console.error("Error parsing RSS feed:", err);
+        logger.error({ error: err }, "Error parsing RSS feed");
         throw err;
       }
     },
@@ -139,10 +151,148 @@ const useChangelog = () => {
   };
 };
 
+const useBackfillCostsPreview = (onSuccess?: () => void) => {
+  const {
+    mutateAsync: backfillCostsPreviewAsync,
+    isPending: isLoadingPreview,
+  } = useMutation({
+    mutationKey: ["backfill-costs-preview"],
+    mutationFn: async (req: {
+      models: components["schemas"]["ModelWithProvider"][];
+      hasCosts: boolean;
+      fromDate?: string;
+      toDate?: string;
+    }) => {
+      const jawnClient = getJawnClient();
+      const { data, error } = await jawnClient.POST(
+        "/v1/admin/backfill-costs-preview",
+        {
+          body: {
+            models: req.models,
+            hasCosts: req.hasCosts,
+            fromDate: req.fromDate,
+            toDate: req.toDate,
+          },
+        },
+      );
+
+      logger.info({ data }, "Backfill costs preview");
+
+      if (!error) {
+        onSuccess && onSuccess();
+      }
+
+      return { data, error };
+    },
+  });
+
+  return {
+    backfillCostsPreviewAsync,
+    isLoadingPreview,
+  };
+};
+
+const useDeduplicateRequestResponse = (onSuccess?: () => void) => {
+  const { mutateAsync: deduplicateAsync, isPending: isDeduplicating } =
+    useMutation({
+      mutationKey: ["deduplicate-request-response"],
+      mutationFn: async () => {
+        const jawnClient = getJawnClient();
+        const { data, error } = await jawnClient.POST(
+          "/v1/admin/deduplicate-request-response-rmt",
+          {
+            body: {},
+          },
+        );
+
+        logger.info({ data }, "Deduplicated request response");
+
+        if (!error) {
+          onSuccess && onSuccess();
+        }
+
+        return { data, error };
+      },
+    });
+
+  return {
+    deduplicateAsync,
+    isDeduplicating,
+  };
+};
+
+const useBackfillCosts = (onSuccess?: () => void) => {
+  const {
+    mutate: backfillCosts,
+    mutateAsync: backfillCostsAsync,
+    isPending: isBackfillingCosts,
+  } = useMutation({
+    mutationKey: ["backfill-costs"],
+    mutationFn: async (req: {
+      models: components["schemas"]["ModelWithProvider"][];
+      confirmed: boolean;
+      fromDate?: string;
+      toDate?: string;
+    }) => {
+      const jawnClient = getJawnClient();
+      const { data, error } = await jawnClient.POST(
+        "/v1/admin/backfill-costs",
+        {
+          body: {
+            models: req.models,
+            confirmed: req.confirmed,
+            fromDate: req.fromDate,
+            toDate: req.toDate,
+          },
+        },
+      );
+
+      logger.info({ data }, "Backfilled costs");
+
+      if (!error) {
+        onSuccess && onSuccess();
+      }
+
+      return { data, error };
+    },
+  });
+
+  return {
+    backfillCosts,
+    backfillCostsAsync,
+    isBackfillingCosts,
+  };
+};
+
+const useFeatureFlag = (feature: string, orgId: string) => {
+  const { data, isLoading, error } = $JAWN_API.useQuery(
+    "post",
+    "/v1/admin/has-feature-flag",
+    {
+      body: {
+        feature,
+        orgId,
+      },
+    },
+    {
+      enabled: Boolean(orgId),
+    },
+  );
+  return {
+    data,
+    isLoading,
+    error,
+  };
+};
+
 export {
   useChangelog,
   useCreateAlertBanner,
   useGetSetting,
   useUpdateAlertBanner,
   useUpdateSetting,
+  useBackfillCosts,
+  useBackfillCostsPreview,
+  useDeduplicateRequestResponse,
+  useFeatureFlag,
 };

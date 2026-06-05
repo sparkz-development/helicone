@@ -4,13 +4,14 @@ import {
   withAuth,
 } from "../../../../lib/api/handlerWrappers";
 import { Result } from "@/packages/common/result";
-import { clickhousePriceCalc } from "@helicone-package/cost";
 import { DecryptedProviderKeyMapping } from "../../../../services/lib/keys";
+import { COST_PRECISION_MULTIPLIER } from "@helicone-package/cost/costCalc";
 import { Permission } from "../../../../services/lib/user";
 import { LimitUsageResult } from "./LimitUsageResult";
+import { logger } from "@/lib/telemetry/logger";
 const generateSubquery = (
   limit: DecryptedProviderKeyMapping["limits"][number],
-  index: number
+  index: number,
 ) => {
   const secondsVal = `val_${index * 3}`;
   const orgIdVal = `val_${index * 3 + 1}`;
@@ -19,7 +20,7 @@ const generateSubquery = (
   return `
     (
       SELECT count(*) as count,
-      ${clickhousePriceCalc("request_response_rmt")} as cost
+      sum(cost) / ${COST_PRECISION_MULTIPLIER} AS cost
       FROM request_response_rmt
       WHERE (
         request_response_rmt.request_created_at >= now() - INTERVAL {${secondsVal} : Int32} SECOND
@@ -44,7 +45,7 @@ async function handler({
     limits: DecryptedProviderKeyMapping["limits"];
   };
   if (!limits) {
-    console.error("Limits not provided");
+    logger.error("Limits not provided");
     res.status(400).json({ error: "Limits not provided", data: null });
     return;
   }
@@ -60,11 +61,16 @@ async function handler({
       limit.timewindow_seconds!,
       org_id,
       limit.helicone_proxy_key,
-    ])
+    ]),
   );
+
+  if (error) {
+    return res.status(500).json({ error, data: null });
+  }
+
   const limitResults = Object.values(keyMappings?.[0])?.[0] as [
     number,
-    number
+    number,
   ][];
 
   const remappedResults = limitResults.map(([count, cost], index) => {

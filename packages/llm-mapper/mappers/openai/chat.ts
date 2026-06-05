@@ -26,7 +26,7 @@ const getRequestText = (requestBody: any): string => {
       return "";
     }
 
-    const lastMessage = messages.at(-1);
+    const lastMessage = messages[messages.length - 1];
     if (!lastMessage) return "";
 
     if (lastMessage.function_call || lastMessage.tool_calls) {
@@ -146,14 +146,6 @@ const processToolResponse = (msg: any): Message => {
     content: toolResponseMsg.content || "",
     _type: "function",
     name: msg.name,
-    tool_calls: [
-      {
-        name: msg.name,
-        arguments: {
-          query_result: msg.content,
-        },
-      },
-    ],
   };
 };
 
@@ -207,12 +199,19 @@ const processSingleImage = (msg: any): Message => {
 const processTextMessage = (msg: any): Message => {
   return {
     content: getFormattedMessageContent(msg.content) || "",
+    reasoning: msg.reasoning || "",
     role: msg.role || "user",
     _type: getContentType(msg as any),
+    ...(msg.annotations && { annotations: msg.annotations.map((ann: any) => ({
+      type: ann.type,
+      url: ann.url_citation?.url || ann.url,
+      title: ann.url_citation?.title || ann.title,
+      content: ann.url_citation?.content || ann.content,
+    })) }),
   };
 };
 
-const openAIMessageToHeliconeMessage = (msg: any): Message => {
+export const openAIMessageToHeliconeMessage = (msg: any): Message => {
   if (msg.function_call || msg.tool_calls) {
     return processFunctionCall(msg);
   }
@@ -236,16 +235,20 @@ export const getRequestMessages = (request: any): Message[] => {
   return request.messages?.map(openAIMessageToHeliconeMessage) ?? [];
 };
 
-const getLLMSchemaResponse = (response: any) => {
+export const getLLMSchemaResponse = (response: any) => {
   if ("error" in response) {
-    return {
-      error: {
-        heliconeMessage:
-          "heliconeMessage" in response.error
-            ? response.error.heliconeMessage
-            : JSON.stringify(response.error),
-      },
-    };
+    try {
+      return {
+        error: {
+          heliconeMessage:
+            "heliconeMessage" in response.error
+              ? response.error.heliconeMessage
+              : JSON.stringify(response.error),
+        },
+      };
+    } catch (error) {
+      return response;
+    }
   }
 
   return {
@@ -283,6 +286,8 @@ export const mapOpenAIRequest: MapperFn<any, any> = ({
     })),
     stop: request.stop,
     response_format: request.response_format,
+    reasoning_effort: request.reasoning_effort,
+    verbosity: request.verbosity,
   };
 
   const llmSchema: LlmSchema = {

@@ -6,7 +6,11 @@ import {
   ok,
 } from "../../packages/common/result";
 import { AbstractLogHandler } from "./AbstractLogHandler";
-import { HandlerContext } from "./HandlerContext";
+import {
+  getCompletionTokens,
+  getPromptTokens,
+  HandlerContext,
+} from "./HandlerContext";
 import { formatTimeString } from "../stores/request/VersionedRequestStore";
 import { KVCache } from "../cache/kvCache";
 import { cacheResultCustom } from "../../utils/cacheResult";
@@ -44,7 +48,7 @@ async function getSegmentConfig(
     // Get the decrypted provider key
     const writeKeyResult = await dbExecute<{ decrypted_provider_key: string }>(
       `SELECT decrypted_provider_key
-       FROM decrypted_provider_keys
+       FROM decrypted_provider_keys_v2
        WHERE provider_name = $1
        AND org_id = $2
        LIMIT 1`,
@@ -56,7 +60,13 @@ async function getSegmentConfig(
       !writeKeyResult.data ||
       writeKeyResult.data.length === 0
     ) {
-      console.error("Error fetching segment write key:", writeKeyResult.error);
+      if (writeKeyResult.error) {
+        console.error(
+          "Error fetching segment write key:",
+          writeKeyResult.error
+        );
+      }
+
       return err("Failed to fetch segment write key");
     }
 
@@ -106,6 +116,11 @@ export class SegmentLogHandler extends AbstractLogHandler {
   }
 
   public async handle(context: HandlerContext): PromiseGenericResult<string> {
+    const start = performance.now();
+    context.timingMetrics.push({
+      constructor: this.constructor.name,
+      start,
+    });
     const segmentConfig = await cacheResultCustom(
       `segment-config-${context.authParams?.organizationId}`,
       async () => getSegmentConfig(context.authParams?.organizationId ?? ""),
@@ -148,24 +163,28 @@ export class SegmentLogHandler extends AbstractLogHandler {
   ): SegmentEvent {
     const request = context.message.log.request;
     const response = context.message.log.response;
-    const usage = context.usage;
+    const legacyUsage = context.legacyUsage;
+    const modelUsage = context.usage;
+
+    const promptTokens = getPromptTokens(modelUsage, legacyUsage) ?? 0;
+    const completionTokens = getCompletionTokens(modelUsage, legacyUsage) ?? 0;
 
     return {
       event: "helicone-request",
       properties: {
         requestId: request.id,
-        completionTokens: usage.completionTokens ?? 0,
+        completionTokens,
         latencyMs: response.delayMs ?? 0,
         model: context.processedLog.model ?? "",
-        promptTokens: usage.promptTokens ?? 0,
+        promptTokens,
         timestamp: formatTimeString(request.requestCreatedAt.toISOString()),
         status: response.status ?? 0,
         timeToFirstTokenMs: response.timeToFirstToken ?? 0,
         provider: request.provider ?? "",
         countryCode: request.countryCode ?? "",
         properties: context.processedLog.request.properties ?? {},
-        costUSD: context.usage.cost ?? 0,
-        heliconeUrl: `https://us.helicone.ai/requests?requestId=${request.id}`,
+        costUSD: context.costBreakdown?.totalCost ?? legacyUsage.cost ?? 0,
+        heliconeUrl: `${process.env.APP_URL || "https://us.helicone.ai"}/requests?requestId=${request.id}`,
       },
       userId: request.userId,
       writeKey,

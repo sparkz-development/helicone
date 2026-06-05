@@ -12,7 +12,7 @@ export type Integration = {
   id: string;
 };
 
-type IntegrationNames = "open_pipe" | "segment";
+type IntegrationNames = "open_pipe" | "segment" | "stripe";
 
 export function useIntegration(integrationName: IntegrationNames) {
   const org = useOrg();
@@ -28,7 +28,7 @@ export function useIntegration(integrationName: IntegrationNames) {
       const response = await jawnClient.GET("/v1/integration");
       if (response.data?.error) throw new Error(response.data.error);
       return response.data?.data?.find(
-        (int) => int.integration_name === integrationName
+        (int) => int.integration_name === integrationName,
       );
     },
   });
@@ -38,15 +38,22 @@ export function useIntegration(integrationName: IntegrationNames) {
       mutationFn: async (params: {
         autoDatasetSync: boolean;
         active: boolean;
+        event_name?: string;
+        showNotification?: boolean;
       }) => {
         const jawnClient = getJawnClient();
+        const settings = {
+          autoDatasetSync: params.autoDatasetSync,
+          ...(params.event_name && { event_name: params.event_name }),
+        };
+
         if (integration?.id) {
           return jawnClient.POST(`/v1/integration/{integrationId}`, {
             params: { path: { integrationId: integration.id } },
             body: {
               settings: {
                 ...integration.settings,
-                autoDatasetSync: params.autoDatasetSync,
+                ...settings,
               },
               active: params.active,
             },
@@ -55,25 +62,27 @@ export function useIntegration(integrationName: IntegrationNames) {
           return jawnClient.POST("/v1/integration", {
             body: {
               integration_name: integrationName,
-              settings: { autoDatasetSync: params.autoDatasetSync },
+              settings,
               active: params.active,
             },
           });
         }
       },
-      onSuccess: () => {
-        setNotification(
-          "OpenPipe integration settings updated successfully",
-          "success"
-        );
+      onSuccess: (_, variables) => {
+        if (variables.showNotification !== false) {
+          setNotification(
+            "Integration settings updated successfully",
+            "success",
+          );
+        }
         queryClient.invalidateQueries({
           queryKey: ["integrations", org?.currentOrg?.id, integrationName],
         });
       },
       onError: (error) => {
         setNotification(
-          `Failed to update OpenPipe integration settings: ${error}`,
-          "error"
+          `Failed to update integration settings: ${error}`,
+          "error",
         );
       },
     });

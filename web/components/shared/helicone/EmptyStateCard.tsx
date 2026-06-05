@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { H2, P } from "@/components/ui/typography";
+import DOMPurify from "dompurify";
 import {
   Archive,
   Bell,
+  Database,
   GitBranch,
   Layers,
   Plus,
@@ -18,7 +20,7 @@ import { createHighlighter } from "shiki";
 // Create a singleton highlighter instance
 const highlighterPromise = createHighlighter({
   themes: ["github-light", "github-dark"],
-  langs: ["javascript", "python", "bash", "http", "plaintext"],
+  langs: ["javascript", "python", "bash", "http", "plaintext", "sql"],
 });
 
 interface EmptyStateFeature {
@@ -50,15 +52,20 @@ export const EMPTY_STATE_FEATURES: Record<string, EmptyStateFeature> = {
   prompts: {
     title: "Create Your First Prompt",
     description:
-      "Design, test, and version control your AI prompts all in one place.",
+      "Design, version, and deploy prompts through the AI Gateway. No code changes needed.",
     icon: Tag,
     featureImage: {
       type: "code",
-      content: `// 1. Format your prompt with variables
-const prompt = hpf\`Explain \${{ topic }} to a \${{ audience }}\`;
-
-// 2. Send requests with the prompt ID
-headers: { "Helicone-Prompt-Id": "explain_topic" }`,
+      content: `// Deploy your prompt template through the AI Gateway
+const response = await client.chat.completions.create({
+  model: "gpt-4o-mini",
+  prompt_id: "customer-support",
+  inputs: {
+    customer_name: "Sarah",
+    issue: "refund request",
+    sentiment: "frustrated"
+  }
+});`,
       language: "typescript",
       maxWidth: "2xl",
     },
@@ -70,7 +77,7 @@ headers: { "Helicone-Prompt-Id": "explain_topic" }`,
       },
       secondary: {
         text: "View Docs",
-        link: "https://docs.helicone.ai/features/prompts",
+        link: "https://docs.helicone.ai/features/advanced-usage/prompts",
       },
     },
   },
@@ -234,6 +241,38 @@ Helicone-Property-UseCase: email_campaign`,
       },
     },
   },
+  hql: {
+    title: "Request Access to HQL",
+    description:
+      "Query your Helicone data with HQL (Helicone Query Language). Analyze requests, tokens, costs, and custom properties across your entire LLM usage.",
+    icon: Database,
+    featureImage: {
+      type: "code",
+      content: `-- Find your most expensive requests in the last 7 days
+SELECT 
+  request_created_at,
+  request_model,
+  response_body,
+  provider_total_cost
+FROM request_response_rmt
+WHERE request_created_at > now() - INTERVAL 7 DAY
+ORDER BY provider_total_cost DESC
+LIMIT 100`,
+      language: "sql",
+      maxWidth: "2xl",
+    },
+    cta: {
+      primary: {
+        text: "Request Access",
+        onClick: true,
+        showPlusIcon: false,
+      },
+      secondary: {
+        text: "View Docs",
+        link: "https://docs.helicone.ai/features/hql",
+      },
+    },
+  },
 } as const;
 
 export type EmptyStateFeatureKey = keyof typeof EMPTY_STATE_FEATURES;
@@ -261,7 +300,7 @@ const ShikiHighlightedCode: React.FC<{
       // Apply custom CSS to override any center alignment and add rounded corners
       const formattedHtml = html.replace(
         /<pre class="shiki"/,
-        '<pre class="shiki rounded-lg" style="text-align: left;"'
+        '<pre class="shiki rounded-lg" style="text-align: left;"',
       );
       setHighlightedCode(formattedHtml);
     };
@@ -270,10 +309,10 @@ const ShikiHighlightedCode: React.FC<{
   }, [code, language]);
 
   return (
-    <div className="rounded-lg overflow-hidden w-full">
+    <div className="w-full overflow-hidden rounded-lg">
       <div
-        className={`rounded-lg p-4 bg-[#24292e] overflow-x-auto text-left max-w-${maxWidth} mx-auto`}
-        dangerouslySetInnerHTML={{ __html: highlightedCode }}
+        className={`overflow-x-auto rounded-lg bg-[#24292e] p-4 text-left max-w-${maxWidth} mx-auto`}
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightedCode) }}
       />
     </div>
   );
@@ -315,13 +354,13 @@ export const EmptyStateCard = ({
         {cta.primary &&
           (cta.primary.onClick ? (
             <Button variant="default" onClick={onPrimaryClick}>
-              {cta.primary.showPlusIcon && <Plus className="h-4 w-4 mr-2" />}
+              {cta.primary.showPlusIcon && <Plus className="mr-2 h-4 w-4" />}
               {cta.primary.text}
             </Button>
           ) : cta.primary.link ? (
             <Link href={cta.primary.link} target="_blank">
               <Button variant="default">
-                {cta.primary.showPlusIcon && <Plus className="h-4 w-4 mr-2" />}
+                {cta.primary.showPlusIcon && <Plus className="mr-2 h-4 w-4" />}
                 {cta.primary.text}
               </Button>
             </Link>
@@ -340,11 +379,11 @@ export const EmptyStateCard = ({
 
   // Standard layout for all empty states based on the properties format
   return (
-    <div className="w-full min-h-screen flex items-center justify-center bg-background dark:bg-sidebar-background py-16">
-      <div className="flex flex-col items-center text-center max-w-3xl mx-auto gap-8 px-4">
+    <div className="flex min-h-screen w-full items-center justify-center bg-background py-16 dark:bg-sidebar-background">
+      <div className="mx-auto flex max-w-3xl flex-col items-center gap-8 px-4 text-center">
         {/* Icon - Square shape */}
         {featureDefaults.icon && (
-          <div className="w-16 h-16 rounded-lg bg-accent flex items-center justify-center border border-border">
+          <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-border bg-accent">
             {React.createElement(featureDefaults.icon, {
               size: 28,
               className: "text-accent-foreground",
@@ -355,7 +394,7 @@ export const EmptyStateCard = ({
         <div className="flex flex-col gap-2">
           <H2>{featureDefaults.title}</H2>
 
-          <P className="text-muted-foreground max-w-3xl">
+          <P className="max-w-3xl text-muted-foreground">
             {featureDefaults.description}
           </P>
         </div>
@@ -371,12 +410,12 @@ export const EmptyStateCard = ({
               />
             ) : featureDefaults.featureImage.type === "video" ? (
               <div
-                className={`overflow-hidden relative rounded-lg border border-border max-w-${
+                className={`relative overflow-hidden rounded-lg border border-border max-w-${
                   featureDefaults.featureImage.maxWidth || "xl"
                 } mx-auto`}
               >
                 <video
-                  className="w-full max-h-[500px] object-contain"
+                  className="max-h-[500px] w-full object-contain"
                   src={featureDefaults.featureImage.content}
                   autoPlay
                   loop
@@ -391,7 +430,7 @@ export const EmptyStateCard = ({
                 <img
                   src={featureDefaults.featureImage.content}
                   alt={featureDefaults.title}
-                  className={`w-full h-auto rounded-lg border border-border max-w-${
+                  className={`h-auto w-full rounded-lg border border-border max-w-${
                     featureDefaults.featureImage.maxWidth || "xl"
                   } mx-auto`}
                 />

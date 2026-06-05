@@ -22,9 +22,8 @@ export class OrganizationStore extends BaseStore {
       // Insert the organization and return the inserted record
       const orgResult = await dbExecute<NewOrganizationParams>(
         `INSERT INTO organization (name, owner, tier, is_personal, has_onboarded, soft_delete, 
-          organization_type, limits, color, icon, stripe_customer_id, 
-          reseller_id, org_provider_key)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          organization_type, limits, color, icon, stripe_customer_id, org_provider_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
         [
           createOrgParams.name,
@@ -38,7 +37,6 @@ export class OrganizationStore extends BaseStore {
           createOrgParams.color,
           createOrgParams.icon,
           createOrgParams.stripe_customer_id,
-          createOrgParams.reseller_id,
           createOrgParams.org_provider_key,
         ]
       );
@@ -126,37 +124,45 @@ export class OrganizationStore extends BaseStore {
     organizationId: string
   ): Promise<Result<string, string>> {
     try {
-      // Prepare the SQL and parameters based on update type
-      let sql = `
-        UPDATE organization 
-        SET name = $1, 
-            color = $2, 
-            icon = $3`;
+      // Build dynamic SQL based on provided parameters - only allow name, color, and icon
+      const updateFields = [];
+      const params = [];
+      let paramIndex = 1;
 
-      const params = [
-        updateOrgParams.name,
-        updateOrgParams.color || null,
-        updateOrgParams.icon || null,
-      ];
-
-      // Add reseller fields if variant is reseller
-      if (updateOrgParams.variant === "reseller") {
-        sql += `, 
-          org_provider_key = $4, 
-          limits = $5::jsonb, 
-          reseller_id = $6, 
-          organization_type = $7`;
-
-        params.push(
-          updateOrgParams.org_provider_key || null,
-          JSON.stringify(updateOrgParams.limits || {}),
-          updateOrgParams.reseller_id || null,
-          "customer"
-        );
+      if (updateOrgParams.name !== undefined) {
+        updateFields.push(`name = $${paramIndex}`);
+        params.push(updateOrgParams.name);
+        paramIndex++;
       }
 
-      // Add WHERE clause and RETURNING
-      sql += ` WHERE id = $${params.length + 1} RETURNING id`;
+      if (updateOrgParams.color !== undefined) {
+        updateFields.push(`color = $${paramIndex}`);
+        params.push(updateOrgParams.color || null);
+        paramIndex++;
+      }
+
+      if (updateOrgParams.icon !== undefined) {
+        updateFields.push(`icon = $${paramIndex}`);
+        params.push(updateOrgParams.icon || null);
+        paramIndex++;
+      }
+
+      if (updateOrgParams.default_time_filter !== undefined) {
+        updateFields.push(`default_time_filter = $${paramIndex}`);
+        params.push(updateOrgParams.default_time_filter);
+        paramIndex++;
+      }
+
+      if (updateFields.length === 0) {
+        return err("No fields to update");
+      }
+
+      const sql = `
+        UPDATE organization 
+        SET ${updateFields.join(", ")}
+        WHERE id = $${paramIndex} 
+        RETURNING id`;
+
       params.push(organizationId);
 
       // Execute the query
@@ -202,7 +208,6 @@ export class OrganizationStore extends BaseStore {
       const result = await dbExecute<{ member: string }>(
         `INSERT INTO organization_member (organization, member)
          VALUES ($1, $2)
-         ON CONFLICT (organization, member) DO NOTHING
          RETURNING member`,
         [organizationId, userId]
       );
@@ -331,16 +336,27 @@ export class OrganizationStore extends BaseStore {
   async getOrganizationMembers(
     organizationId: string
   ): Promise<Result<OrganizationMember[], string>> {
-    const query = `
-      select email, member, org_role from organization_member om 
+    let query;
+    if (process.env.NEXT_PUBLIC_BETTER_AUTH === "true") {
+      query = `
+      select pu.email, member, org_role, created_at from organization_member om 
         left join auth.users u on u.id = om.member
+        left join public.user pu on pu.auth_user_id = u.id
         where om.organization = $1
     `;
+    } else {
+      query = `
+      select u.email, member, org_role, om.created_at from organization_member om 
+        left join auth.users u on u.id = om.member
+        where om.organization = $1
+      `;
+    }
 
     return await dbExecute<{
       email: string;
       member: string;
       org_role: string;
+      created_at: string;
     }>(query, [organizationId]);
   }
 
@@ -377,6 +393,21 @@ export class OrganizationStore extends BaseStore {
       return err(result.error ?? "No access to org");
     }
     return ok(result.data);
+  }
+
+  async isUserOwner(organizationId: string, userId: string): Promise<boolean> {
+    const query = `
+      select * from organization_member om
+      where om.organization = $1 and om.member = $2 and om.org_role = 'owner'
+    `;
+    const result = await dbExecute<{ org_role: string }>(query, [
+      organizationId,
+      userId,
+    ]);
+    if (result.error || !result.data || result.data.length === 0) {
+      return false;
+    }
+    return result.data[0].org_role === "owner";
   }
 
   async removeMemberFromOrganization(
@@ -471,6 +502,76 @@ export class OrganizationStore extends BaseStore {
     }
   }
 
+  async updateOrganizationOwner(
+    organizationId: string,
+    userId: string,
+    memberId: string
+  ): Promise<Result<null, string>> {
+    try {
+      // Check if organization exists and user has access
+      const orgResult = await dbExecute<{ id: string; owner: string }>(
+        `SELECT id, owner
+         FROM organization
+         WHERE id = $1
+         LIMIT 1`,
+        [organizationId]
+      );
+
+      if (orgResult.error || !orgResult.data || orgResult.data.length === 0) {
+        return err("Organization not found");
+      }
+
+      const org = orgResult.data[0];
+
+      const isOwner = org.owner === userId;
+
+      if (!isOwner) {
+        return err("Unauthorized");
+      }
+
+      // Update the organization owner
+      const updateResult = await dbExecute(
+        `UPDATE organization_member
+         SET org_role = $1
+         WHERE member = $2
+         AND organization = $3`,
+        ["owner", memberId, organizationId]
+      );
+
+      if (updateResult.error) {
+        return err(updateResult.error);
+      }
+
+      // change current owner to admin
+      const updateAdminResult = await dbExecute(
+        `UPDATE organization_member
+         SET org_role = $1
+         WHERE member = $2
+         AND organization = $3`,
+        ["admin", userId, organizationId]
+      );
+
+      if (updateAdminResult.error) {
+        return err(updateAdminResult.error);
+      }
+
+      // Update the organization owner
+      const updateOwnerResult = await dbExecute(
+        `UPDATE organization
+         SET owner = $1
+         WHERE id = $2`,
+        [memberId, organizationId]
+      );
+      if (updateOwnerResult.error) {
+        return err(updateOwnerResult.error);
+      }
+
+      return ok(null);
+    } catch (error) {
+      return err(String(error));
+    }
+  }
+
   async checkAccessToMutateOrg(
     orgId: string,
     userId: string
@@ -479,9 +580,8 @@ export class OrganizationStore extends BaseStore {
       // Check if organization exists
       const orgResult = await dbExecute<{
         id: string;
-        reseller_id: string | null;
       }>(
-        `SELECT id, reseller_id
+        `SELECT id
          FROM organization
          WHERE id = $1
          LIMIT 1`,
@@ -496,13 +596,6 @@ export class OrganizationStore extends BaseStore {
 
       // Check if user has access to the organization
       if (await this._checkAccessToOrg(orgId, userId)) {
-        return true;
-      }
-      // Check if user has access to the reseller organization
-      else if (
-        org.reseller_id &&
-        (await this._checkAccessToOrg(org.reseller_id, userId))
-      ) {
         return true;
       } else {
         return false;
@@ -607,17 +700,19 @@ export class OrganizationStore extends BaseStore {
 
   async updateOnboardingStatus(
     onboardingStatus: OnboardingStatus,
-    name: string,
-    hasOnboarded: boolean
+    name: string
   ): Promise<Result<string, string>> {
+    const hasOnboarded = onboardingStatus.hasOnboarded ?? false;
+    const hasIntegrated = onboardingStatus.hasIntegrated ?? false;
     const result = await dbExecute<{ id: string }>(
       `UPDATE organization 
        SET onboarding_status = COALESCE(onboarding_status, '{}'::jsonb) || $1::jsonb,
            name = COALESCE(NULLIF($2, ''), name),
-           has_onboarded = CASE WHEN has_onboarded = true THEN true ELSE $3 END
-       WHERE id = $4
+           has_onboarded = CASE WHEN has_onboarded = true THEN true ELSE $3 END,
+           has_integrated = CASE WHEN has_integrated = true THEN true ELSE $4 END
+       WHERE id = $5
        RETURNING id`,
-      [onboardingStatus, name, hasOnboarded, this.organizationId]
+      [onboardingStatus, name, hasOnboarded, hasIntegrated, this.organizationId]
     );
 
     if (result.error || !result.data || result.data.length === 0) {

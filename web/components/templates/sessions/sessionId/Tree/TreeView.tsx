@@ -1,3 +1,4 @@
+import React from "react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -53,7 +54,7 @@ export interface TableTreeNode {
 
 interface TreeViewProps {
   selectedRequestId: string;
-  setSelectedRequestId: (id: string) => void;
+  setSelectedRequestId: (_id: string) => void;
   session: Session;
   isOriginalRealtime?: boolean;
 }
@@ -74,12 +75,12 @@ export const TreeView: React.FC<TreeViewProps> = ({
 
   const [activeColumns, setActiveColumns] = useLocalStorage<DragColumnItem[]>(
     `session-requests-table-activeColumns`,
-    initialColumns.map(columnDefToDragColumnItem)
+    initialColumns.map(columnDefToDragColumnItem),
   );
 
   const [drawerSize, setDrawerSize] = useLocalStorage(
     "session-request-drawer-size",
-    0
+    0,
   );
   const drawerRef = useRef<any>(null);
 
@@ -88,7 +89,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
       return undefined;
     }
     const trace = session.traces.find(
-      (t) => t.request_id === selectedRequestId
+      (t) => t.request_id === selectedRequestId,
     );
     if (!trace) {
       return undefined;
@@ -118,7 +119,6 @@ export const TreeView: React.FC<TreeViewProps> = ({
 
   const handleCollapseDrawer = () => {
     drawerRef.current?.collapse();
-    setDrawerSize(0);
   };
 
   const handleToggleAllRows = (table: any) => {
@@ -157,7 +157,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
             <ResizableHandle />
 
             <ResizablePanel defaultSize={60} minSize={25}>
-              <div className="h-full border-t border-slate-200 dark:border-slate-800 flex">
+              <div className="flex h-full border-t border-slate-200 dark:border-slate-800">
                 <div className="h-full w-full">
                   <SessionTimelineTable
                     id="session-requests-table"
@@ -186,14 +186,11 @@ export const TreeView: React.FC<TreeViewProps> = ({
 
         <ResizablePanel
           ref={drawerRef}
-          defaultSize={0}
+          defaultSize={drawerSize}
           minSize={25}
           maxSize={75}
           collapsible={true}
           collapsedSize={0}
-          onCollapse={() => {
-            setDrawerSize(0);
-          }}
           onExpand={() => {
             drawerRef.current?.resize(drawerSize > 0 ? drawerSize : 33);
           }}
@@ -245,7 +242,7 @@ function convertToTableData(node: TreeNodeData, level = 0): TableTreeNode {
 
   if (node.children && node.children.length > 0) {
     tableNode.subRows = node.children.map((child: TreeNodeData) =>
-      convertToTableData(child, level + 1)
+      convertToTableData(child, level + 1),
     );
   }
 

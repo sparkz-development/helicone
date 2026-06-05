@@ -48,8 +48,28 @@ export const costs: ModelRow[] = [
   },
   {
     model: {
-      operator: "equals",
-      value: "grok-3",
+      operator: "includes",
+      value: "grok-code-fast-1",
+    },
+    cost: {
+      prompt_token: 0.0000002,
+      completion_token: 0.0000015,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "grok-4-fast",
+    },
+    cost: {
+      prompt_token: 0.0000002,
+      completion_token: 0.0000005,
+    },
+  },
+  {
+    model: {
+      operator: "includes",
+      value: "grok-4",
     },
     cost: {
       prompt_token: 0.000003,
@@ -58,17 +78,7 @@ export const costs: ModelRow[] = [
   },
   {
     model: {
-      operator: "equals",
-      value: "grok-3-fast",
-    },
-    cost: {
-      prompt_token: 0.000003,
-      completion_token: 0.000025,
-    },
-  },
-  {
-    model: {
-      operator: "equals",
+      operator: "includes",
       value: "grok-3-mini",
     },
     cost: {
@@ -78,12 +88,12 @@ export const costs: ModelRow[] = [
   },
   {
     model: {
-      operator: "equals",
-      value: "grok-3-mini-fast",
+      operator: "includes",
+      value: "grok-3",
     },
     cost: {
-      prompt_token: 0.0000006,
-      completion_token: 0.000004,
+      prompt_token: 0.000003,
+      completion_token: 0.000015,
     },
   },
 ];

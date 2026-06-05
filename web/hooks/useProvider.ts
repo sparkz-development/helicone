@@ -3,6 +3,7 @@ import useNotification from "@/components/shared/notification/useNotification";
 import { getJawnClient } from "@/lib/clients/jawn";
 import { Provider, ProviderKey } from "@/types/provider";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { logger } from "@/lib/telemetry/logger";
 
 interface UseProviderParams {
   // If a provider is specified, the hook will work in "provider-specific" mode
@@ -24,7 +25,7 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
   const providerKeysQueryKey = ["provider-keys", orgId];
 
   // Query to fetch provider keys
-  const { data: providerKeysData } = useQuery({
+  const { data: providerKeysData, refetch: refetchProviderKeys } = useQuery({
     queryKey: providerKeysQueryKey,
     queryFn: async () => {
       if (!orgId) return [] as ProviderKey[];
@@ -33,7 +34,10 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
       const response = await jawnClient.GET("/v1/api-keys/provider-keys", {});
 
       if (response && "error" in response) {
-        console.error("Failed to fetch provider keys:", response.error);
+        logger.error(
+          { error: response.error, orgId },
+          "Failed to fetch provider keys",
+        );
         return [] as ProviderKey[];
       }
 
@@ -42,26 +46,31 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
     enabled: !!orgId,
   });
 
-  // Get provider-specific data
-
   // Mutation to create/update provider key
   const updateProviderKey = useMutation({
     mutationFn: async ({
-      providerName,
       key,
+      secretKey,
       keyId,
-      providerKeyName,
       config,
+      byokEnabled,
     }: {
-      providerName: string;
       key?: string;
+      secretKey?: string;
       keyId: string;
-      providerKeyName: string;
       config?: Record<string, any>;
+      byokEnabled: boolean;
     }) => {
       if (!orgId) throw new Error("No organization selected");
 
       const jawnClient = getJawnClient(orgId);
+
+      // Build body object conditionally - only include defined values
+      const body: any = {};
+      if (key !== undefined) body.providerKey = key;
+      if (secretKey !== undefined) body.providerSecretKey = secretKey;
+      if (config !== undefined) body.config = config;
+      if (byokEnabled !== undefined) body.byokEnabled = byokEnabled;
 
       return jawnClient.PATCH("/v1/api-keys/provider-key/{providerKeyId}", {
         params: {
@@ -69,10 +78,7 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
             providerKeyId: keyId,
           },
         },
-        body: {
-          providerKey: key,
-          config,
-        },
+        body,
       });
     },
     onSuccess: () => {
@@ -81,7 +87,7 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
     onError: (error: Error) => {
       setNotification(
         "Failed to save key: " + (error.message || "Unknown error"),
-        "error"
+        "error",
       );
     },
   });
@@ -90,13 +96,17 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
     mutationFn: async ({
       providerName,
       key,
+      secretKey,
       providerKeyName,
       config,
+      byokEnabled,
     }: {
       providerName: string;
       key: string;
+      secretKey?: string;
       providerKeyName: string;
       config?: Record<string, any>;
+      byokEnabled: boolean;
     }) => {
       if (!orgId) throw new Error("No organization selected");
       const jawnClient = getJawnClient(orgId);
@@ -106,15 +116,20 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
           body: {
             providerName,
             providerKey: key,
+            providerSecretKey: secretKey,
             providerKeyName,
             config: config || {},
+            byokEnabled,
           },
         });
 
         if (response.error) throw new Error(response);
         return response.data;
       } catch (error) {
-        console.error("Error adding provider key:", error);
+        logger.error(
+          { error, providerName, providerKeyName, orgId },
+          "Error adding provider key",
+        );
         throw error;
       }
     },
@@ -124,14 +139,17 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
     onError: (error: Error) => {
       setNotification(
         "Failed to add key: " + (error.message || "Unknown error"),
-        "error"
+        "error",
       );
     },
   });
 
   const viewDecryptedProviderKey = async (
-    keyId: string
-  ): Promise<string | null> => {
+    keyId: string,
+  ): Promise<{
+    providerKey: string;
+    providerSecretKey?: string | null;
+  } | null> => {
     if (!orgId) return null;
 
     try {
@@ -144,11 +162,14 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
               providerKeyId: keyId,
             },
           },
-        }
+        },
       );
 
       if (response && "error" in response) {
-        console.error("Failed to fetch decrypted key:", response.error);
+        logger.error(
+          { error: response.error, keyId, orgId },
+          "Failed to fetch decrypted key",
+        );
         return null;
       }
 
@@ -158,20 +179,62 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
         typeof response.data === "object" &&
         "provider_key" in response.data
       ) {
-        return response.data.provider_key || null;
+        return {
+          providerKey: response.data.provider_key || "",
+          providerSecretKey:
+            "provider_secret_key" in response.data
+              ? response.data.provider_secret_key
+              : "",
+        };
       }
 
       return null;
     } catch (error) {
-      console.error("Error viewing decrypted key:", error);
+      logger.error({ error, keyId, orgId }, "Error viewing decrypted key");
       return null;
     }
   };
 
+  const deleteProviderKey = useMutation({
+    mutationFn: async (keyId: string) => {
+      if (!orgId) throw new Error("No organization selected");
+
+      const jawnClient = getJawnClient(orgId);
+
+      const response = await jawnClient.DELETE(
+        "/v1/api-keys/provider-key/{providerKeyId}",
+        {
+          params: {
+            path: {
+              providerKeyId: keyId,
+            },
+          },
+        },
+      );
+
+      if (response && "error" in response) {
+        throw new Error(response.error);
+      }
+
+      return response.data;
+    },
+    onSuccess: () => {
+      setNotification("Provider key deleted successfully", "success");
+      queryClient.invalidateQueries({ queryKey: providerKeysQueryKey });
+    },
+    onError: (error: Error) => {
+      logger.error({ error }, "Failed to delete provider key");
+      setNotification(
+        "Failed to delete key: " + (error.message || "Unknown error"),
+        "error",
+      );
+    },
+  });
+
   const providerKeys = providerKeysData || [];
   const existingKey = providerId
     ? providerKeys.find(
-        (key: any) => key.provider_name === providerName && !key.soft_delete
+        (key: any) => key.provider_name === providerId && !key.soft_delete,
       )
     : undefined;
 
@@ -183,8 +246,11 @@ export const useProvider = ({ provider }: UseProviderParams = {}) => {
     existingKey,
     addProviderKey,
     updateProviderKey,
+    deleteProviderKey,
     isSavingKey: updateProviderKey.isPending || addProviderKey.isPending,
     isSavedKey: updateProviderKey.isSuccess || addProviderKey.isSuccess,
+    isDeletingKey: deleteProviderKey.isPending,
     viewDecryptedProviderKey,
+    refetchProviderKeys,
   };
 };

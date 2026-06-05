@@ -7,6 +7,7 @@ import {
 import { Result } from "@/packages/common/result";
 import { DecryptedProviderKey } from "../../../services/lib/keys";
 import { Permission } from "../../../services/lib/user";
+import { logger } from "@/lib/telemetry/logger";
 
 async function handler({
   req,
@@ -42,11 +43,11 @@ async function handler({
 
   const { error } = await dbExecute(
     `INSERT INTO provider_keys (id, org_id, provider_name, provider_key_name, provider_key) VALUES ($1, $2, $3, $4, $5)`,
-    [keyId, userData.orgId, providerName, providerKeyName, providerKey]
+    [keyId, userData.orgId, providerName, providerKeyName, providerKey],
   );
 
   if (error) {
-    console.error("Failed to insert provider key", error);
+    logger.error({ error }, "Failed to insert provider key");
     res.status(500).json({ error: error, data: null });
     return;
   }

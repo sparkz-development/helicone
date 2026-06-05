@@ -64,7 +64,7 @@ export const usePrompts = (promptId?: string) => {
       const promptId = query.queryKey[2] as string;
       const jawn = getJawnClient(orgId);
 
-      let filterNode: any = "all";
+      let filterNode: any = {};
 
       if (promptId) {
         filterNode = {
@@ -132,7 +132,7 @@ export const usePrompt = (id: string) => {
 
 export const usePromptRequestsOverTime = (
   params: BackendMetricsCall<any>["params"],
-  queryKey: string
+  queryKey: string,
 ) => {
   const promptUsageOverTime = useBackendMetricCall<
     Result<RequestsOverTime[], string>
@@ -142,14 +142,14 @@ export const usePromptRequestsOverTime = (
     key: queryKey,
     postProcess: (data) => {
       return resultMap(data, (d) =>
-        d.map((d) => ({ count: +d.count, time: new Date(d.time) }))
+        d.map((d) => ({ count: +d.count, time: new Date(d.time) })),
       );
     },
   });
 
   const totalRequests = promptUsageOverTime.data?.data?.reduce(
     (acc, curr) => acc + curr.count,
-    0
+    0,
   );
 
   return {
@@ -181,7 +181,7 @@ export const useCreatePrompt = () => {
         (
           await jawn.POST("/v1/prompt/query", {
             body: {
-              filter: "all",
+              filter: {},
             },
           })
         )?.data?.data || [];
@@ -219,9 +219,32 @@ export const useCreatePrompt = () => {
   return {
     createPrompt: (
       request: Partial<LLMRequestBody>,
-      metadata?: Record<string, any>
+      metadata?: Record<string, any>,
     ) => mutation.mutateAsync({ prompt: request, metadata }),
     isCreating: mutation.isPending,
     error: mutation.error,
+  };
+};
+
+export const useHasPrompts = () => {
+  const org = useOrg();
+
+  const { data, isPending, refetch, isRefetching } = useQuery({
+    queryKey: ["hasPrompts", org?.currentOrg?.id],
+    queryFn: async (query) => {
+      const orgId = query.queryKey[1] as string;
+      const jawn = getJawnClient(orgId);
+
+      return jawn.GET("/v1/prompt/has-prompts");
+    },
+    enabled: !!org?.currentOrg?.id,
+    refetchOnWindowFocus: false,
+  });
+
+  return {
+    isLoading: isPending,
+    refetch,
+    isRefetching,
+    hasPrompts: data?.data?.data?.hasPrompts ?? false,
   };
 };

@@ -1,4 +1,3 @@
-import { Env } from "../..";
 import { AuthParams } from "../dbLogger/DBLoggable";
 import { Result, err, ok } from "../util/results";
 
@@ -7,23 +6,6 @@ export class RateLimiter {
     private rateLimiter: Env["RATE_LIMITER"],
     private authParams: AuthParams
   ) {}
-
-  private getRateLimitParams(tier: "free") {
-    const rateLimitParams: Record<
-      string,
-      {
-        windowSizeSeconds: number;
-        maxCount: number;
-      }
-    > = {
-      free: {
-        windowSizeSeconds: 60,
-        maxCount: 10_000,
-      },
-    };
-
-    return rateLimitParams[tier];
-  }
 
   async checkRateLimit(tier: string): Promise<
     Result<
@@ -41,21 +23,15 @@ export class RateLimiter {
       );
 
       const rateLimiter = this.rateLimiter.get(rateLimiterId);
-      if (tier !== "free") {
-        return ok({
-          isRateLimited: false,
-          shouldLogInDB: false,
-          rlIncrementDB: 0,
-        });
-      }
-
-      const params = this.getRateLimitParams(tier);
 
       const rateLimitRes = await rateLimiter.fetch(
         "https://www.this_does_matter.helicone.ai",
         {
           method: "POST",
-          body: JSON.stringify(params),
+          body: JSON.stringify({
+            windowSizeSeconds: 60,
+            maxCount: getRPMFromTier(tier),
+          }),
           headers: {
             "content-type": "application/json",
           },
@@ -73,5 +49,21 @@ export class RateLimiter {
     } catch (error: any) {
       return err(JSON.stringify(error));
     }
+  }
+}
+
+function getRPMFromTier(tier: string): number {
+  if (!tier || typeof tier !== "string") {
+    return 60;
+  } else if (tier.startsWith("enterprise")) {
+    return 520;
+  } else if (tier.startsWith("team")) {
+    return 240;
+  } else if (tier.startsWith("pro")) {
+    return 120;
+  } else if (tier.startsWith("growth")) {
+    return 60;
+  } else {
+    return 60;
   }
 }

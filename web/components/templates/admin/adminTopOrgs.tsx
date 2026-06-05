@@ -1,19 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  Card,
-  LineChart,
-  Select,
-  SelectItem,
-  Title,
-  Badge,
-} from "@tremor/react";
+import { LineChart } from "@tremor/react";
 import { getJawnClient } from "../../../lib/clients/jawn";
 import { useLocalStorage } from "../../../services/hooks/localStorage";
 import { useOrg } from "../../layout/org/organizationContext";
-import { H1, H2, P } from "@/components/ui/typography";
+import { H1, H2, H3, P, Small, Muted } from "@/components/ui/typography";
 import { formatLargeNumber } from "../../shared/utils/numberFormat";
 import { useEffect } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 interface OrgTimeData {
   time: string;
@@ -81,7 +83,7 @@ const AdminTopOrgs = (props: AdminTopOrgsProps) => {
   // State to track selected organizations
   const [selectedOrgs, setSelectedOrgs] = useLocalStorage<string[]>(
     "admin-top-orgs-selected-orgs",
-    []
+    [],
   );
 
   const topOrgsData = useQuery<TopOrgsResponse>({
@@ -101,7 +103,7 @@ const AdminTopOrgs = (props: AdminTopOrgsProps) => {
             limit,
             groupBy,
           },
-        }
+        },
       );
 
       if (error) {
@@ -122,11 +124,11 @@ const AdminTopOrgs = (props: AdminTopOrgsProps) => {
       if (
         selectedOrgs.length === 0 ||
         !topOrgsData.data.organizations.some((org) =>
-          selectedOrgs.includes(org.organization_id)
+          selectedOrgs.includes(org.organization_id),
         )
       ) {
         setSelectedOrgs(
-          topOrgsData.data.organizations.map((org) => org.organization_id)
+          topOrgsData.data.organizations.map((org) => org.organization_id),
         );
       }
     }
@@ -145,7 +147,7 @@ const AdminTopOrgs = (props: AdminTopOrgsProps) => {
   const toggleAllOrgs = (select: boolean) => {
     if (select && topOrgsData.data?.organizations) {
       setSelectedOrgs(
-        topOrgsData.data.organizations.map((org) => org.organization_id)
+        topOrgsData.data.organizations.map((org) => org.organization_id),
       );
     } else {
       setSelectedOrgs([]);
@@ -264,115 +266,126 @@ const AdminTopOrgs = (props: AdminTopOrgsProps) => {
   ];
 
   return (
-    <div className="flex flex-col space-y-6">
-      <H1>Top Organizations Over Time</H1>
-      <P>View request counts for the top organizations over time</P>
+    <div className="flex flex-col gap-8 p-4 md:p-6">
+      <div className="flex flex-col gap-2">
+        <H1>Top Organizations Over Time</H1>
+        <Muted>View request counts for the top organizations over time</Muted>
+      </div>
 
-      <div className="flex flex-col space-y-4 md:flex-row md:space-y-0 md:space-x-4 md:items-end">
-        <div className="flex flex-col space-y-2">
-          <div className="flex justify-between items-center">
-            <H2>Time Range</H2>
-            <span className="text-sm text-muted-foreground">
+      <div className="flex flex-col gap-4 md:flex-row md:gap-6">
+        <div className="flex flex-1 flex-col gap-2">
+          <Label className="flex items-center justify-between">
+            <span className="font-semibold">Time Range</span>
+            <Small className="font-normal text-muted-foreground">
               Grouped by: {getGroupBy(timeRange)}
-            </span>
-          </div>
+            </Small>
+          </Label>
           <Select
             value={timeRange}
             onValueChange={(value) => setTimeRange(value as any)}
           >
-            {timeRanges.map((range) => (
-              <SelectItem value={range} key={range}>
-                {range}
-              </SelectItem>
-            ))}
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {timeRanges.map((range) => (
+                <SelectItem value={range} key={range}>
+                  {range}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
 
-        <div className="flex flex-col space-y-2">
-          <H2>Number of Organizations</H2>
+        <div className="flex flex-1 flex-col gap-2 md:max-w-xs">
+          <Label className="font-semibold">Number of Organizations</Label>
           <Select
             value={limit.toString()}
             onValueChange={(value) => setLimit(parseInt(value))}
           >
-            {limitOptions.map((num) => (
-              <SelectItem value={num.toString()} key={num}>
-                {num}
-              </SelectItem>
-            ))}
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {limitOptions.map((num) => (
+                <SelectItem value={num.toString()} key={num}>
+                  {num}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
       </div>
 
-      <Card className="p-6 shadow-md">
-        <div className="flex flex-col space-y-4">
-          <div className="flex justify-between items-center">
-            <Title>Request Counts Over Time</Title>
-            <div className="flex space-x-4">
-              <button
+      <div className="rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-6 p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <H2>Request Counts Over Time</H2>
+            <div className="flex gap-2">
+              <Button
                 onClick={() => toggleAllOrgs(true)}
-                className="px-3 py-1 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                variant="default"
+                size="sm"
               >
                 Select All
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => toggleAllOrgs(false)}
-                className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90"
+                variant="outline"
+                size="sm"
               >
                 Deselect All
-              </button>
+              </Button>
             </div>
           </div>
 
           {topOrgsData.isLoading ? (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex h-64 items-center justify-center">
               <p>Loading data...</p>
             </div>
           ) : topOrgsData.error ? (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex h-64 items-center justify-center">
               <p className="text-red-500">Error loading data</p>
             </div>
           ) : chartData().length === 0 ? (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex h-64 items-center justify-center">
               <p>No data available</p>
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex flex-wrap gap-2">
                 {topOrgsData.data?.organizations.map((org, index) => (
-                  <Badge
+                  <label
                     key={org.organization_id}
-                    className={`cursor-pointer px-3 py-1.5 flex items-center gap-2 ${
-                      selectedOrgs.includes(org.organization_id)
-                        ? "bg-opacity-100"
-                        : "bg-opacity-30 text-muted-foreground"
-                    }`}
-                    style={{
-                      backgroundColor: selectedOrgs.includes(
-                        org.organization_id
-                      )
-                        ? chartColors[index % chartColors.length]
-                        : `${chartColors[index % chartColors.length]}33`,
-                    }}
-                    onClick={() => toggleOrgSelection(org.organization_id)}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-2 transition-colors hover:bg-accent"
                   >
-                    <span className="flex-shrink-0">
-                      <Checkbox
-                        checked={selectedOrgs.includes(org.organization_id)}
-                        onCheckedChange={() =>
-                          toggleOrgSelection(org.organization_id)
-                        }
-                        className="mr-1"
-                      />
-                    </span>
-                    <span className="truncate max-w-[150px]">
+                    <Checkbox
+                      checked={selectedOrgs.includes(org.organization_id)}
+                      onCheckedChange={() =>
+                        toggleOrgSelection(org.organization_id)
+                      }
+                    />
+                    <div
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: `hsl(${(index * 360) / 14}, 70%, 50%)`,
+                      }}
+                    />
+                    <span
+                      className={`text-sm ${
+                        !selectedOrgs.includes(org.organization_id)
+                          ? "text-muted-foreground"
+                          : "text-foreground"
+                      }`}
+                    >
                       {org.organization_name}
                     </span>
-                  </Badge>
+                  </label>
                 ))}
               </div>
 
               <LineChart
-                className="h-96 mt-6"
+                className="mt-6 h-96"
                 data={chartData()}
                 index="time"
                 categories={chartCategories}
@@ -390,50 +403,53 @@ const AdminTopOrgs = (props: AdminTopOrgsProps) => {
             </>
           )}
         </div>
-      </Card>
+      </div>
 
       {!topOrgsData.isLoading && topOrgsData.data?.organizations && (
-        <div className="flex flex-col space-y-4">
+        <div className="flex flex-col gap-4">
           <H2>Organization Details</H2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {topOrgsData.data.organizations.map((org, index) => (
-              <Card
+              <div
                 key={org.organization_id}
-                className={`p-4 transition-opacity duration-200 ${
+                className={`rounded-lg border border-border bg-card shadow-sm transition-opacity duration-200 ${
                   selectedOrgs.includes(org.organization_id)
                     ? "opacity-100"
-                    : "opacity-60"
+                    : "opacity-50"
                 }`}
               >
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    checked={selectedOrgs.includes(org.organization_id)}
-                    onCheckedChange={() =>
-                      toggleOrgSelection(org.organization_id)
-                    }
-                    className="mr-1"
-                  />
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{
-                      backgroundColor: chartColors[index % chartColors.length],
-                    }}
-                  ></div>
-                  <Title>{org.organization_name}</Title>
+                <div className="flex flex-col gap-3 p-4">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={selectedOrgs.includes(org.organization_id)}
+                      onCheckedChange={() =>
+                        toggleOrgSelection(org.organization_id)
+                      }
+                    />
+                    <div
+                      className="h-3 w-3 flex-shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: `hsl(${(index * 360) / 14}, 70%, 50%)`,
+                      }}
+                    />
+                    <H3 className="truncate">{org.organization_name}</H3>
+                  </div>
+                  <div className="flex flex-col gap-1 pl-6">
+                    <P className="text-sm">
+                      <span className="font-medium">Total Requests:</span>{" "}
+                      {formatLargeNumber(
+                        org.data.reduce(
+                          (sum, point) => sum + point.request_count,
+                          0,
+                        ),
+                      )}
+                    </P>
+                    <Small className="truncate text-muted-foreground">
+                      {org.organization_id}
+                    </Small>
+                  </div>
                 </div>
-                <P className="mt-2">
-                  Total Requests:{" "}
-                  {formatLargeNumber(
-                    org.data.reduce(
-                      (sum, point) => sum + point.request_count,
-                      0
-                    )
-                  )}
-                </P>
-                <P className="text-sm text-muted-foreground">
-                  ID: {org.organization_id}
-                </P>
-              </Card>
+              </div>
             ))}
           </div>
         </div>

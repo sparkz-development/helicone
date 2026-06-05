@@ -1,3 +1,6 @@
+// This line must come before importing any instrumented module.
+import "./tracer";
+
 // Load env before anything else
 import "./lib/env";
 
@@ -14,11 +17,11 @@ import {
 } from "./lib/clients/kafkaConsumers/constant";
 import { webSocketProxyForwarder } from "./lib/proxy/WebSocketProxyForwarder";
 import { RequestWrapper } from "./lib/requestWrapper/requestWrapper";
-import { tokenRouter } from "./lib/routers/tokenRouter";
 import { DelayedOperationService } from "./lib/shared/delayedOperationService";
 import { runLoopsOnce, runMainLoops } from "./mainLoops";
-import { authMiddleware } from "./middleware/auth";
+import { authFromRequest, authMiddleware } from "./middleware/auth";
 import { IS_RATE_LIMIT_ENABLED, limiter } from "./middleware/ratelimitter";
+import { unauthorizedCacheMiddleware } from "./middleware/unauthorizedCache";
 import { RegisterRoutes as registerPrivateTSOARoutes } from "./tsoa-build/private/routes";
 import { RegisterRoutes as registerPublicTSOARoutes } from "./tsoa-build/public/routes";
 import * as publicSwaggerDoc from "./tsoa-build/public/swagger.json";
@@ -26,32 +29,43 @@ import { initLogs } from "./utils/injectLogs";
 import { initSentry } from "./utils/injectSentry";
 import { startConsumers, startSQSConsumers } from "./workers/consumerInterface";
 import { IS_ON_PREM } from "./constants/IS_ON_PREM";
+import { toExpressRequest } from "./utils/expressHelpers";
+import { webSocketControlPlaneServer } from "./controlPlane/controlPlane";
+import { startDBListener } from "./controlPlane/dbListener";
+import { ValidateError } from "tsoa";
+import { SecretManager } from "@helicone-package/secrets/SecretManager";
 
 if (ENVIRONMENT === "production" || process.env.ENABLE_CRON_JOB === "true") {
   runMainLoops();
 }
+const getAppUrlRegex = () => {
+  const appUrl =
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
+  try {
+    const url = new URL(appUrl);
+    const protocol = url.protocol.replace(":", "");
+    const hostname = url.hostname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const port = url.port ? `:${url.port}` : "";
+    return new RegExp(`^${protocol}:\/\/${hostname}${port}$`);
+  } catch {
+    return /^http:\/\/localhost:3000$/;
+  }
+};
+
 const allowedOriginsEnv = {
   production: [
     /^https?:\/\/(www\.)?helicone\.ai$/,
-    /^https?:\/\/(www\.)?.*-helicone\.vercel\.app$/,
+    /^https?:\/\/helicone-[a-z0-9-]+-helicone\.vercel\.app$/,
     /^https?:\/\/(www\.)?helicone\.vercel\.app$/,
     /^https?:\/\/(www\.)?helicone-git-valhalla-use-jawn-to-read-helicone\.vercel\.app$/,
-    /^http:\/\/localhost:3000$/,
-    /^http:\/\/localhost:3001$/,
-    /^http:\/\/localhost:3002$/,
+    getAppUrlRegex(),
     /^https?:\/\/(www\.)?eu\.helicone\.ai$/, // Added eu.helicone.ai
     /^https?:\/\/(www\.)?us\.helicone\.ai$/,
   ],
-  development: [
-    /^http:\/\/localhost:3000$/,
-    /^http:\/\/localhost:3001$/,
-    /^http:\/\/localhost:3002$/,
-  ],
-  preview: [
-    /^http:\/\/localhost:3000$/,
-    /^http:\/\/localhost:3001$/,
-    /^http:\/\/localhost:3002$/,
-  ],
+  development: [getAppUrlRegex()],
+  preview: [getAppUrlRegex()],
 };
 
 const allowedOrigins = allowedOriginsEnv[ENVIRONMENT];
@@ -99,22 +113,21 @@ var rawBodySaver = function (req: any, res: any, buf: any, encoding: any) {
   }
 };
 
-app.use(bodyParser.json({ verify: rawBodySaver, limit: "50mb" }));
+app.use(bodyParser.json({ verify: rawBodySaver, limit: "10mb" }));
 app.use(
   bodyParser.urlencoded({
     verify: rawBodySaver,
     extended: true,
-    limit: "50mb",
-    parameterLimit: 50000,
+    limit: "10mb",
+    parameterLimit: 1000,
   })
 );
-app.use(bodyParser.raw({ verify: rawBodySaver, type: "*/*", limit: "50mb" }));
+app.use(bodyParser.raw({ verify: rawBodySaver, type: "*/*", limit: "10mb" }));
 
-const KAFKA_CREDS = JSON.parse(process.env.KAFKA_CREDS ?? "{}");
-const KAFKA_ENABLED = (KAFKA_CREDS?.KAFKA_ENABLED ?? "false") === "true";
+const SQS_ENABLED = SecretManager.getSecret("SQS_ENABLED") === "true";
 
-if (KAFKA_ENABLED) {
-  console.log("Starting Kafka consumers");
+if (SQS_ENABLED) {
+  console.log("Starting SQS consumers");
   startConsumers({
     dlqCount: 0,
     normalCount: 0,
@@ -127,9 +140,12 @@ if (KAFKA_ENABLED) {
     normalCount: NORMAL_WORKER_COUNT,
     scoresCount: SCORES_WORKER_COUNT,
     scoresDlqCount: SCORES_WORKER_COUNT,
+    lowCount: NORMAL_WORKER_COUNT,
     backFillCount: 0,
   });
 }
+
+startDBListener();
 
 app.get("/healthcheck", (req, res) => {
   res.json({
@@ -163,16 +179,14 @@ unAuthenticatedRouter.use(
   swaggerUi.setup(publicSwaggerDoc as any)
 );
 
-unAuthenticatedRouter.use(tokenRouter);
-
 unAuthenticatedRouter.use("/download/swagger.json", (req, res) => {
   res.json(publicSwaggerDoc as any);
 });
 
-// v1APIRouter.use(
-//   "/v1/public/dataisbeautiful",
-//   unauthorizedCacheMiddleware("/v1/public/dataisbeautiful")
-// );
+v1APIRouter.use(
+  "/v1/public/stats",
+  unauthorizedCacheMiddleware("stats", 4 * 60 * 60 * 1000)
+);
 
 v1APIRouter.use(authMiddleware);
 
@@ -189,11 +203,56 @@ v1APIRouter.use(
     parameterLimit: 50000,
   })
 );
+
 registerPublicTSOARoutes(v1APIRouter);
 registerPrivateTSOARoutes(v1APIRouter);
 
 app.use(unAuthenticatedRouter);
 app.use(v1APIRouter);
+
+// Helper to detect safe-to-expose ClickHouse/database errors
+function getSafeErrorMessage(err: Error): string | null {
+  const msg = err.message.toLowerCase();
+  if (msg.includes("max_execution_time") || msg.includes("timeout")) {
+    return "Query timeout. Try a shorter time range or simpler filters.";
+  }
+  if (msg.includes("max_memory_usage")) {
+    return "Query exceeded memory limit. Try a shorter time range.";
+  }
+  if (msg.includes("max_result_rows") || msg.includes("max_rows_to_read")) {
+    return "Query returned too many rows. Add more filters.";
+  }
+  return null;
+}
+
+function errorHandler(
+  err: unknown,
+  req: express.Request,
+  res: express.Response,
+  next: NextFunction
+): express.Response | void {
+  if (err instanceof ValidateError) {
+    console.warn(`Caught Validation Error for ${req.path}:`, err.fields);
+    return res.status(422).json({
+      message: "Validation Failed",
+      details: err.fields,
+    });
+  }
+  if (err instanceof Error) {
+    const safeMessage = getSafeErrorMessage(err);
+    return res.status(500).json({
+      message: safeMessage || "Internal Server Error",
+      details:
+        safeMessage ||
+        (ENVIRONMENT === "production" ? "Internal Server Error" : err.message),
+      stack: ENVIRONMENT === "production" ? undefined : err.stack,
+    });
+  }
+
+  next();
+}
+
+app.use(errorHandler);
 
 function setRouteTimeout(
   req: express.Request,
@@ -218,51 +277,19 @@ const server = app.listen(port, "0.0.0.0", () => {
 });
 
 server.on("upgrade", async (req, socket, head) => {
-  // Only handle websocket upgrades for /v1/gateway/oai/realtime
-  if (!req.url?.startsWith("/v1/gateway/oai/realtime")) {
-    socket.destroy();
-    return;
-  }
-
-  const expressRequest: ExpressRequest = {
-    method: req.method!,
-    headers: req.headers!,
-    body: "{}",
-    get: function (this: { headers: any }, name: string) {
-      return this.headers[name];
-    },
-    header: function (this: { headers: any }, name: string) {
-      return this.headers[name];
-    },
-    is: function () {
-      return false;
-    },
-    protocol: "http",
-    secure: false,
-    ip: "::1",
-    ips: [],
-    subdomains: [],
-    hostname: "localhost",
-    host: "localhost",
-    fresh: false,
-    stale: true,
-    xhr: false,
-    cookies: {},
-    signedCookies: {},
-    query: {},
-    route: {},
-    originalUrl: req.url,
-    baseUrl: "",
-    next: function () {},
-  } as unknown as ExpressRequest;
-
   const { data: requestWrapper, error: requestWrapperErr } =
-    await RequestWrapper.create(expressRequest);
+    await RequestWrapper.create(toExpressRequest(req));
 
   if (requestWrapperErr || !requestWrapper) {
     throw new Error("Error creating request wrapper");
   }
-  webSocketProxyForwarder(requestWrapper, socket, head);
+  if (req.url?.startsWith("/v1/gateway/oai/realtime")) {
+    webSocketProxyForwarder(requestWrapper, socket, head);
+  } else if (req.url?.startsWith("/ws/v1/router/control-plane")) {
+    return webSocketControlPlaneServer(requestWrapper, socket, head);
+  } else {
+    socket.destroy();
+  }
 });
 
 // ... existing code ...

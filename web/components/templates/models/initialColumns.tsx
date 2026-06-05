@@ -1,5 +1,5 @@
 import { ColumnDef } from "@tanstack/react-table";
-import { ModelMetric } from "../../../lib/api/models/models";
+import { ModelMetric } from "../../../services/hooks/models";
 import ModelPill from "../requests/modelPill";
 
 export const INITIAL_COLUMNS: ColumnDef<ModelMetric>[] = [
@@ -7,7 +7,7 @@ export const INITIAL_COLUMNS: ColumnDef<ModelMetric>[] = [
     accessorKey: "model",
     header: "Model",
     cell: (info) => (
-      <span className="text-gray-900 dark:text-gray-100 font-medium">
+      <span className="font-medium text-gray-900 dark:text-gray-100">
         {info.getValue() === "" ? (
           "n/a"
         ) : (

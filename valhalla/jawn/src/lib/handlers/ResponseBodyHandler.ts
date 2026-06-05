@@ -1,28 +1,35 @@
+import { getUsageProcessor } from "@helicone-package/cost";
 import {
-  calculateModel,
-  getModelFromResponse,
-  isResponseImageModel,
-} from "../../utils/modelMapper";
-import {
-  IBodyProcessor,
-  ParseOutput,
-} from "../shared/bodyProcessors/IBodyProcessor";
-import { AnthropicBodyProcessor } from "../shared/bodyProcessors/anthropicBodyProcessor";
-import { AnthropicStreamBodyProcessor } from "../shared/bodyProcessors/anthropicStreamBodyProcessor";
-import { GenericBodyProcessor } from "../shared/bodyProcessors/genericBodyProcessor";
-import { GoogleBodyProcessor } from "../shared/bodyProcessors/googleBodyProcessor";
-import { GoogleStreamBodyProcessor } from "../shared/bodyProcessors/googleStreamBodyProcessor";
-import { GroqStreamProcessor } from "../shared/bodyProcessors/groqStreamProcessor";
-import { OpenAIStreamProcessor } from "../shared/bodyProcessors/openAIStreamProcessor";
-import { TogetherAIStreamProcessor } from "../shared/bodyProcessors/togetherAIStreamProcessor";
-import { ImageModelParsingResponse } from "../shared/imageParsers/core/parsingResponse";
-import { getResponseImageModelParser } from "../shared/imageParsers/parserMapper";
+  modelCost,
+  modelCostBreakdownFromRegistry,
+} from "@helicone-package/cost/costCalc";
+import { heliconeProviderToModelProviderName } from "@helicone-package/cost/models/provider-helpers";
+import { IUsageProcessor } from "@helicone-package/cost/usage/IUsageProcessor";
+import { OpenAIUsageProcessor } from "@helicone-package/cost/usage/openAIUsageProcessor";
 import {
   PromiseGenericResult,
   Result,
   err,
   ok,
 } from "../../packages/common/result";
+import { calculateModel, getModelFromResponse } from "../../utils/modelMapper";
+import {
+  IBodyProcessor,
+  ParseOutput,
+} from "../shared/bodyProcessors/IBodyProcessor";
+import { AnthropicBodyProcessor } from "../shared/bodyProcessors/anthropicBodyProcessor";
+import { AnthropicStreamBodyProcessor } from "../shared/bodyProcessors/anthropicStreamBodyProcessor";
+import { BedrockStreamProcessor } from "../shared/bodyProcessors/bedrockStreamProcessor";
+import { GenericBodyProcessor } from "../shared/bodyProcessors/genericBodyProcessor";
+import { GoogleBodyProcessor } from "../shared/bodyProcessors/googleBodyProcessor";
+import { GoogleStreamBodyProcessor } from "../shared/bodyProcessors/googleStreamBodyProcessor";
+import { GroqStreamProcessor } from "../shared/bodyProcessors/groqStreamProcessor";
+import { LlamaBodyProcessor } from "../shared/bodyProcessors/llamaBodyProcessor";
+import { LlamaStreamBodyProcessor } from "../shared/bodyProcessors/llamaStreamBodyProcessor";
+import { OpenAIStreamProcessor } from "../shared/bodyProcessors/openAIStreamProcessor";
+import { TogetherAIStreamProcessor } from "../shared/bodyProcessors/togetherAIStreamProcessor";
+import { VercelBodyProcessor } from "../shared/bodyProcessors/vercelBodyProcessor";
+import { VercelStreamProcessor } from "../shared/bodyProcessors/vercelStreamProcessor";
 import { AbstractLogHandler } from "./AbstractLogHandler";
 import { HandlerContext } from "./HandlerContext";
 
@@ -60,11 +67,23 @@ function isHTML(responseBody: string): boolean {
 
 export class ResponseBodyHandler extends AbstractLogHandler {
   public async handle(context: HandlerContext): PromiseGenericResult<string> {
+    const start = performance.now();
+    context.timingMetrics.push({
+      constructor: this.constructor.name,
+      start,
+    });
+
     try {
+      console.log("Processing response body for request:", context.message.log.request);
       const processedResponseBody = await this.processBody(context);
-      context.processedLog.response.model = getModelFromResponse(
-        processedResponseBody.data?.processedBody
-      );
+      if (processedResponseBody.data?.statusOverride) {
+        context.message.log.response.status =
+          processedResponseBody.data.statusOverride;
+      }
+      // Get model from response body, or fall back to Worker-provided model when body isn't stored
+      context.processedLog.response.model =
+        getModelFromResponse(processedResponseBody.data?.processedBody) ||
+        context.message.log.response.model;
 
       const definedModel =
         calculateModel(
@@ -77,25 +96,12 @@ export class ResponseBodyHandler extends AbstractLogHandler {
       if (typeof context.processedLog.response.model !== "string") {
         context.processedLog.response.model = "unknown";
       }
-      const omittedResponseBody = this.handleOmitResponseBody(
+      const responseBodyFinal = this.handleOmitResponseBody(
         context,
         processedResponseBody,
         context.processedLog.response.model
       );
 
-      const { body: responseBodyFinal, assets: responseBodyAssets } =
-        this.processResponseBodyImages(
-          context.message.log.response.id,
-          omittedResponseBody,
-          definedModel
-        );
-
-      // Set processed response body
-      context.processedLog.response.assets = responseBodyAssets;
-      context.processedLog.assets = new Map([
-        ...(context.processedLog.request.assets ?? []),
-        ...(context.processedLog.response.assets ?? []),
-      ]);
       context.processedLog.response.body = responseBodyFinal;
 
       const { responseModel, model } = this.determineAssistantModel(
@@ -108,20 +114,110 @@ export class ResponseBodyHandler extends AbstractLogHandler {
         context.processedLog.model = model;
       }
 
-      // Set usage
-      const usage =
+      // Set legacy usage values captured from body processors
+      // Fall back to Worker-provided tokens when body isn't stored (free tier limit exceeded)
+      const legacyUsage =
         processedResponseBody.data?.usage ??
         processedResponseBody.data?.processedBody?.usage ??
         {};
-      context.usage.completionTokens = usage.completionTokens;
-      context.usage.promptTokens = usage.promptTokens;
-      context.usage.totalTokens = usage.totalTokens;
-      context.usage.heliconeCalculated = usage.heliconeCalculated;
-      context.usage.cost = usage.cost;
-      context.usage.promptCacheWriteTokens = usage.promptCacheWriteTokens;
-      context.usage.promptCacheReadTokens = usage.promptCacheReadTokens;
-      context.usage.promptAudioTokens = usage.promptAudioTokens;
-      context.usage.completionAudioTokens = usage.completionAudioTokens;
+      context.legacyUsage.completionTokens =
+        legacyUsage.completionTokens ??
+        context.message.log.response.completionTokens;
+      context.legacyUsage.promptTokens =
+        legacyUsage.promptTokens ?? context.message.log.response.promptTokens;
+      context.legacyUsage.totalTokens =
+        legacyUsage.totalTokens ??
+        ((context.legacyUsage.promptTokens ?? 0) +
+          (context.legacyUsage.completionTokens ?? 0) ||
+          undefined);
+      context.legacyUsage.heliconeCalculated = legacyUsage.heliconeCalculated;
+      // Fall back to Worker-provided cache/audio tokens when body isn't stored
+      context.legacyUsage.promptCacheWriteTokens =
+        legacyUsage.promptCacheWriteTokens ??
+        context.message.log.response.promptCacheWriteTokens;
+      context.legacyUsage.promptCacheReadTokens =
+        legacyUsage.promptCacheReadTokens ??
+        context.message.log.response.promptCacheReadTokens;
+      context.legacyUsage.promptAudioTokens =
+        legacyUsage.promptAudioTokens ??
+        context.message.log.response.promptAudioTokens;
+      context.legacyUsage.completionAudioTokens =
+        legacyUsage.completionAudioTokens ??
+        context.message.log.response.completionAudioTokens;
+      context.legacyUsage.reasoningTokens =
+        legacyUsage.reasoningTokens ??
+        context.message.log.response.reasoningTokens;
+      context.legacyUsage.promptCacheWrite5m = legacyUsage.promptCacheWrite5m;
+      context.legacyUsage.promptCacheWrite1h = legacyUsage.promptCacheWrite1h;
+      if (typeof legacyUsage.cost === "number" && legacyUsage.cost) {
+        context.legacyUsage.cost = legacyUsage.cost;
+      } else {
+        // Use context.legacyUsage which has Worker-provided tokens as fallback
+        const cost = modelCost({
+          model: context.processedLog.model ?? "",
+          provider: context.message.log.request.provider ?? "",
+          sum_prompt_tokens: context.legacyUsage.promptTokens ?? 0,
+          prompt_cache_write_tokens: context.legacyUsage.promptCacheWriteTokens ?? 0,
+          prompt_cache_read_tokens: context.legacyUsage.promptCacheReadTokens ?? 0,
+          prompt_audio_tokens: context.legacyUsage.promptAudioTokens ?? 0,
+          sum_completion_tokens: context.legacyUsage.completionTokens ?? 0,
+          completion_audio_tokens: context.legacyUsage.completionAudioTokens ?? 0,
+          prompt_cache_write_5m: context.legacyUsage.promptCacheWrite5m ?? 0,
+          prompt_cache_write_1h: context.legacyUsage.promptCacheWrite1h ?? 0,
+        });
+
+        context.legacyUsage.cost = cost;
+      }
+
+      // Parse structured usage via the registry-aware processors when available
+      const gatewayProvider = context.message.heliconeMeta.gatewayProvider;
+      const provider =
+        gatewayProvider ??
+        heliconeProviderToModelProviderName(
+          context.message.log.request.provider
+        );
+      const rawResponse = context.rawLog.rawResponseBody;
+      const isAIGateway =
+        context.message.log.request.requestReferrer === "ai-gateway";
+
+      if (provider && rawResponse) {
+        let usageProcessor: IUsageProcessor | null;
+        if (isAIGateway) {
+          // AI Gateway always uses OpenAI processor
+          usageProcessor = new OpenAIUsageProcessor();
+        } else {
+          usageProcessor = getUsageProcessor(provider);
+        }
+
+        if (usageProcessor) {
+          const parsedUsage = await usageProcessor.parse({
+            responseBody: rawResponse,
+            isStream: context.message.log.request.isStream,
+            model: context.processedLog.model ?? "",
+          });
+          if (parsedUsage.error !== null) {
+            console.error(
+              `Error parsing structured usage for provider ${provider}: ${parsedUsage.error}`
+            );
+          } else if (parsedUsage.data) {
+            context.usage = parsedUsage.data ?? null;
+
+            const providerModelId =
+              context.message.heliconeMeta.providerModelId ??
+              (!isAIGateway ? context.processedLog.model : "") ??
+              "";
+
+            const breakdown = modelCostBreakdownFromRegistry({
+              modelUsage: parsedUsage.data,
+              providerModelId,
+              provider,
+            });
+            if (breakdown) {
+              context.costBreakdown = breakdown;
+            }
+          }
+        }
+      }
 
       return await super.handle(context);
     } catch (error: any) {
@@ -134,6 +230,7 @@ export class ResponseBodyHandler extends AbstractLogHandler {
   private getModelFromPath(path: string): string {
     const regex1 = /\/engines\/([^/]+)/;
     const regex2 = /models\/([^/:]+)/;
+    const regex3 = /\/model\/([^/:]+)/; // Add regex for Bedrock runtime paths
 
     let match = path.match(regex1);
 
@@ -141,31 +238,15 @@ export class ResponseBodyHandler extends AbstractLogHandler {
       match = path.match(regex2);
     }
 
+    if (!match) {
+      match = path.match(regex3);
+    }
+
     if (match && match[1]) {
       return match[1];
     }
 
     return "";
-  }
-  private processResponseBodyImages(
-    responseId: string,
-    responseBody: any,
-    model?: string
-  ): ImageModelParsingResponse {
-    let imageModelParsingResponse: ImageModelParsingResponse = {
-      body: responseBody,
-      assets: new Map<string, string>(),
-    };
-
-    if (model && isResponseImageModel(model)) {
-      const imageModelParser = getResponseImageModelParser(model, responseId);
-      if (imageModelParser) {
-        imageModelParsingResponse =
-          imageModelParser.processResponseBody(responseBody);
-      }
-    }
-
-    return imageModelParsingResponse;
   }
 
   private handleOmitResponseBody(
@@ -189,16 +270,16 @@ export class ResponseBodyHandler extends AbstractLogHandler {
         parse_response_error: processedResponseBody.error,
         body: omitResponseLog
           ? {
-              model: responseModel, // Put response model here, not calculated model
-            }
-          : processedResponseBody.data?.processedBody ?? undefined,
+            model: responseModel, // Put response model here, not calculated model
+          }
+          : (processedResponseBody.data?.processedBody ?? undefined),
       };
     } else {
       return omitResponseLog
         ? {
-            model: responseModel, // Put response model here, not calculated model
-          }
-        : processedResponseBody.data.processedBody ?? undefined;
+          model: responseModel, // Put response model here, not calculated model
+        }
+        : (processedResponseBody.data.processedBody ?? undefined);
     }
   }
 
@@ -209,7 +290,7 @@ export class ResponseBodyHandler extends AbstractLogHandler {
     const isStream =
       log.request.isStream || context.processedLog.request.body?.stream;
 
-    const provider = log.request.provider;
+    const isAIGateway = log.request.requestReferrer === "ai-gateway";
 
     let responseBody = context.rawLog.rawResponseBody;
     const requestBody = context.rawLog.rawRequestBody;
@@ -240,8 +321,9 @@ export class ResponseBodyHandler extends AbstractLogHandler {
       const model = context.processedLog.model;
       const parser = this.getBodyProcessor(
         isStream,
-        provider,
+        log.request.provider,
         responseBody,
+        isAIGateway,
         model
       );
       return await parser.parse({
@@ -281,14 +363,29 @@ export class ResponseBodyHandler extends AbstractLogHandler {
   }
 
   private isVectorDBResponse(responseBody: any): boolean {
+    if (typeof responseBody !== "object" || responseBody === null) {
+      return false;
+    }
     return (
       responseBody.hasOwnProperty("_type") && responseBody._type === "vector_db"
     );
   }
 
   private isToolResponse(responseBody: any): boolean {
+    if (typeof responseBody !== "object" || responseBody === null) {
+      return false;
+    }
     return (
       responseBody.hasOwnProperty("_type") && responseBody._type === "tool"
+    );
+  }
+
+  private isDataResponse(responseBody: any): boolean {
+    if (typeof responseBody !== "object" || responseBody === null) {
+      return false;
+    }
+    return (
+      responseBody.hasOwnProperty("_type") && responseBody._type === "data"
     );
   }
 
@@ -296,6 +393,9 @@ export class ResponseBodyHandler extends AbstractLogHandler {
     responseBody: any,
     currentModel?: string
   ): { responseModel: string; model: string } {
+    if (typeof responseBody !== "object" || responseBody === null) {
+      return { responseModel: "Unknown", model: "unknown" };
+    }
     if (
       this.isAssistantResponse(responseBody) &&
       responseBody.hasOwnProperty("status") &&
@@ -311,6 +411,11 @@ export class ResponseBodyHandler extends AbstractLogHandler {
         responseModel: "Tool",
         model: `tool:${responseBody.toolName}`,
       };
+    } else if (this.isDataResponse(responseBody)) {
+      return {
+        responseModel: "Data",
+        model: `data:${responseBody.name}`,
+      };
     }
     return { responseModel: currentModel || "", model: currentModel || "" };
   }
@@ -319,27 +424,63 @@ export class ResponseBodyHandler extends AbstractLogHandler {
     isStream: boolean,
     provider: string,
     responseBody: any,
+    isAIGateway: boolean,
     model?: string
   ): IBodyProcessor {
-    if (!isStream && provider === "ANTHROPIC" && responseBody) {
-      return new AnthropicBodyProcessor();
-    } else if (!isStream && provider === "GOOGLE") {
-      return new GoogleBodyProcessor();
-    } else if (
-      isStream &&
-      (provider === "ANTHROPIC" || model?.includes("claude"))
-    ) {
-      return new AnthropicStreamBodyProcessor();
-    } else if (isStream && provider === "GOOGLE") {
-      return new GoogleStreamBodyProcessor();
-    } else if (isStream && provider === "TOGETHER") {
-      return new TogetherAIStreamProcessor();
-    } else if (isStream && provider === "GROQ") {
-      return new GroqStreamProcessor();
-    } else if (isStream) {
-      return new OpenAIStreamProcessor();
-    } else {
-      return new GenericBodyProcessor();
+    if (!isStream) {
+      if (isAIGateway) {
+        return new GenericBodyProcessor();
+      }
+      if (provider === "ANTHROPIC" && responseBody) {
+        return new AnthropicBodyProcessor();
+      }
+      if (provider === "LLAMA") {
+        return new LlamaBodyProcessor();
+      }
+      if (provider === "GOOGLE") {
+        return new GoogleBodyProcessor();
+      }
+      if (provider === "VERCEL") {
+        // Check if it's actually a stream by content
+        if (
+          typeof responseBody === "string" &&
+          responseBody.includes("data: {") &&
+          responseBody.includes('"type":')
+        ) {
+          return new VercelStreamProcessor();
+        }
+        return new VercelBodyProcessor();
+      }
     }
+
+    if (isStream) {
+      if (isAIGateway) {
+        return new OpenAIStreamProcessor();
+      }
+      if (provider === "ANTHROPIC" || model?.includes("claude")) {
+        return new AnthropicStreamBodyProcessor();
+      }
+      if (provider === "LLAMA") {
+        return new LlamaStreamBodyProcessor();
+      }
+      if (provider === "GOOGLE") {
+        return new GoogleStreamBodyProcessor();
+      }
+      if (provider === "TOGETHER") {
+        return new TogetherAIStreamProcessor();
+      }
+      if (provider === "GROQ") {
+        return new GroqStreamProcessor();
+      }
+      if (provider === "VERCEL") {
+        return new VercelStreamProcessor();
+      }
+      if (provider === "AWS" || provider === "BEDROCK") {
+        return new BedrockStreamProcessor();
+      }
+      return new OpenAIStreamProcessor();
+    }
+
+    return new GenericBodyProcessor();
   }
 }

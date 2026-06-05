@@ -1,5 +1,6 @@
 import { isUIFilterRow } from "@helicone-package/filters/helpers";
 import { UIFilterRowTree } from "@helicone-package/filters/types";
+import { logger } from "@/lib/telemetry/logger";
 
 export type FilterRow = {
   filterMapIdx: number;
@@ -46,12 +47,17 @@ export function transformFilter(filter: any): UIFilterRowTree {
     }
   }
 
-  console.error("Invalid filter structure", filter);
+  logger.error(
+    {
+      filter,
+    },
+    "Invalid filter structure",
+  );
   return { operator: "and", rows: [] };
 }
 
 export function transformOrganizationLayoutFilters(
-  filters: OrganizationFilter[]
+  filters: OrganizationFilter[],
 ): OrganizationFilter[] {
   return filters.map((filter) => ({
     ...filter,

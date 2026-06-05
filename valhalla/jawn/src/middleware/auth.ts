@@ -4,6 +4,7 @@ import { RequestWrapper } from "../lib/requestWrapper";
 import { AuthParams } from "../packages/common/auth/types";
 import { getHeliconeAuthClient } from "../packages/common/auth/server/AuthClientFactory";
 import { clickhouseDb } from "../lib/db/ClickhouseWrapper";
+import { err, Result } from "../packages/common/result";
 
 // Replace PostHog with ClickHouse logging
 export const logHttpRequestInClickhouse = (
@@ -46,16 +47,47 @@ export const logHttpRequestInClickhouse = (
   return onFinish;
 };
 
+export const authFromRequest = async (
+  req: Request
+): Promise<Result<AuthParams, string>> => {
+  const request = new RequestWrapper(req);
+  const authorization = request.authHeader();
+
+  if (authorization.error) {
+    return err(authorization.error);
+  }
+
+  return await getHeliconeAuthClient().authenticate(
+    authorization.data!,
+    req.headers
+  );
+};
+
 export const authMiddleware = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  if (req.path.startsWith("/v1/public")) {
+  // Public routes — explicitly whitelisted to prevent accidental exposure
+  const PUBLIC_ROUTE_PREFIXES = [
+    "/v1/public/model-registry",
+    "/v1/public/stats",
+    "/v1/public/security",
+    "/v1/public/alert-banner",
+    "/v1/public/status/provider",
+    "/v1/public/pi",
+    "/v1/public/compare",
+    "/v1/public/waitlist",
+  ];
+  if (PUBLIC_ROUTE_PREFIXES.some((prefix) => req.path.startsWith(prefix))) {
     next();
     return;
   }
-  if (req.path === "/v1/organization") {
+  if (req.path === "/v1/models" && req.method === "GET") {
+    next();
+    return;
+  }
+  if (req.path === "/v1/organization" && req.method === "GET") {
     next();
     return;
   }
@@ -64,24 +96,21 @@ export const authMiddleware = async (
     const request = new RequestWrapper(req);
     const authorization = request.authHeader();
 
-    if (authorization.error) {
-      res.status(401).json({
-        error: authorization.error,
-      });
-      return;
-    }
+    const authParams = await authFromRequest(req);
 
-    const authParams = await getHeliconeAuthClient().authenticate(
-      authorization.data!,
-      req.headers
+    const isWriteMethod = ["POST", "PUT", "PATCH", "DELETE"].includes(
+      req.method
     );
+    const requiredPermission = isWriteMethod ? "w" : "r";
+    // The /v1/log/request endpoint uses write permission "w" for logging
+    const isLogEndpoint = req.path === "/v1/log/request";
 
     if (
       authParams.error ||
       !authParams.data?.organizationId ||
       (authParams.data.keyPermissions &&
-        !authParams.data?.keyPermissions?.includes("r") &&
-        req.path !== "/v1/log/request") // For local testing
+        !authParams.data?.keyPermissions?.includes(requiredPermission) &&
+        !(isLogEndpoint && authParams.data?.keyPermissions?.includes("w")))
     ) {
       res.status(401).json({
         error: authParams.error,
@@ -92,22 +121,25 @@ export const authMiddleware = async (
 
     (req as any).authParams = authParams.data;
 
-    const onFinish = logHttpRequestInClickhouse(
-      {
-        method: `${req.method}`,
-        url: `${req.originalUrl}`,
-        userAgent: `${req.headers["user-agent"] ?? ""}`,
-      },
-      {
-        status: res.statusCode,
-      },
-      authParams.data
-    );
+    // const onFinish = logHttpRequestInClickhouse(
+    //   {
+    //     method: `${req.method}`,
+    //     url: `${req.originalUrl}`,
+    //     userAgent: `${req.headers["user-agent"] ?? ""}`,
+    //   },
+    //   {
+    //     status: res.statusCode,
+    //   },
+    //   authParams.data
+    // );
 
-    res.on("finish", onFinish);
+    // res.on("finish", onFinish);
 
-    if (req.path.startsWith("/v1/admin")) {
-      if(authorization.data?._type !== "jwt") {
+    if (
+      req.path.startsWith("/v1/admin") &&
+      req.path !== "/v1/admin/has-feature-flag"
+    ) {
+      if (authorization.data?._type !== "jwt") {
         res.status(401).json({
           error: "Unauthorized",
         });

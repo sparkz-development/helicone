@@ -1,4 +1,3 @@
-import { clickhousePriceCalcNonAggregated } from "@helicone-package/cost";
 import { Result, err, ok, resultMap } from "../../../packages/common/result";
 import {
   DEFAULT_UUID,
@@ -6,7 +5,7 @@ import {
 } from "@helicone-package/llm-mapper/types";
 import { dbExecute, dbQueryClickhouse } from "../../shared/db/dbExecute";
 import { S3Client } from "../../shared/db/s3Client";
-import { FilterNode } from "../../shared/filters/filterDefs";
+import { FilterNode } from "@helicone-package/filters/filterDefs";
 import {
   buildFilterWithAuth,
   buildFilterWithAuthClickHouse,
@@ -16,8 +15,9 @@ import {
   buildRequestSort,
   buildRequestSortClickhouse,
 } from "../../shared/sorts/requests/sorts";
-
-const MAX_TOTAL_BODY_SIZE = 1024 * 1024;
+import { COST_PRECISION_MULTIPLIER } from "@helicone-package/cost/costCalc";
+import { SortDirection } from "../../shared/sorts/requests/sorts";
+import { safeJsonParse } from "../../../utils/helpers";
 
 export interface HeliconeRequestAsset {
   assetUrl: string;
@@ -136,8 +136,8 @@ export async function getRequests(
   const requests = await dbExecute<HeliconeRequest>(query, builtFilter.argsAcc);
 
   const s3Client = new S3Client(
-    process.env.S3_ACCESS_KEY ?? "",
-    process.env.S3_SECRET_KEY ?? "",
+    process.env.S3_ACCESS_KEY || undefined,
+    process.env.S3_SECRET_KEY || undefined,
     process.env.S3_ENDPOINT_PUBLIC ?? process.env.S3_ENDPOINT ?? "",
     process.env.S3_BUCKET_NAME ?? "",
     (process.env.S3_REGION as "us-west-2" | "eu-west-1") ?? "us-west-2"
@@ -152,7 +152,8 @@ export async function getRequestsClickhouseNoSort(
   orgId: string,
   filter: FilterNode,
   offset: number,
-  limit: number
+  limit: number,
+  createdAtSort: SortDirection
 ): Promise<Result<HeliconeRequest[], string>> {
   if (isNaN(offset) || isNaN(limit)) {
     return { data: null, error: "Invalid offset or limit" };
@@ -167,22 +168,38 @@ export async function getRequestsClickhouseNoSort(
     argsAcc: [],
   });
 
+  const sortSQL = createdAtSort === "asc" ? "ASC" : "DESC";
   const query = `
+    WITH top_requests AS (
+      SELECT
+          request_id,
+          request_created_at
+      FROM request_response_rmt
+      WHERE (${builtFilter.filter})
+        AND request_created_at <= now() + INTERVAL 5 MINUTE
+      ORDER BY request_created_at ${sortSQL}
+      LIMIT ${limit}
+      OFFSET ${offset}
+    )
     SELECT response_id,
-      map('helicone_message', 'fetching body from signed_url... contact engineering@helicone.ai for more information') as response_body,
+      if(notEmpty(response_body), response_body, '{"helicone_message": "fetching body from signed_url... contact engineering@helicone.ai for more information"}') as response_body,
       response_created_at,
       toInt32(status) AS response_status,
       request_id,
-      map('helicone_message', 'fetching body from signed_url... contact engineering@helicone.ai for more information') as request_body,
+      if(notEmpty(request_body), request_body, '{"helicone_message": "fetching body from signed_url... contact engineering@helicone.ai for more information"}') as request_body,
       request_created_at,
       user_id AS request_user_id,
       properties AS request_properties,
       provider,
       toInt32(latency) AS delay_ms,
       model AS request_model,
+      ai_gateway_body_mapping,
       time_to_first_token,
-      (prompt_tokens + completion_tokens) AS total_tokens,
+      (prompt_tokens + completion_tokens + reasoning_tokens) AS total_tokens,
       completion_tokens,
+      reasoning_tokens,
+      prompt_cache_read_tokens,
+      prompt_cache_write_tokens,
       prompt_tokens,
       country_code,
       scores,
@@ -190,24 +207,30 @@ export async function getRequestsClickhouseNoSort(
       assets as asset_ids,
       target_url,
       cache_reference_id,
-      cache_enabled
+      request_referrer,
+      cache_enabled,
+      cost / ${COST_PRECISION_MULTIPLIER} as cost,
+      prompt_id,
+      prompt_version,
+      updated_at,
+      storage_location
     FROM request_response_rmt
     WHERE (
-      (${builtFilter.filter})
+      organization_id = {val_0 : String} AND
+      request_created_at >= (SELECT min(request_created_at) - interval '5 minute' FROM top_requests)
+      AND request_created_at <= (SELECT max(request_created_at) + interval '5 minute' FROM top_requests)
+      AND request_id IN (SELECT request_id FROM top_requests)
     )
-    ORDER BY (organization_id, toStartOfHour(request_created_at), request_created_at) DESC
-    LIMIT ${limit}
-    OFFSET ${offset}
+    ORDER BY organization_id ${sortSQL}, toStartOfHour(request_created_at) ${sortSQL}, request_created_at ${sortSQL}
   `;
-
   const requests = await dbQueryClickhouse<HeliconeRequest>(
     query,
     builtFilter.argsAcc
   );
 
   const s3Client = new S3Client(
-    process.env.S3_ACCESS_KEY ?? "",
-    process.env.S3_SECRET_KEY ?? "",
+    process.env.S3_ACCESS_KEY || undefined,
+    process.env.S3_SECRET_KEY || undefined,
     process.env.S3_ENDPOINT_PUBLIC ?? process.env.S3_ENDPOINT ?? "",
     process.env.S3_BUCKET_NAME ?? "",
     (process.env.S3_REGION as "us-west-2" | "eu-west-1") ?? "us-west-2"
@@ -242,32 +265,43 @@ export async function getRequestsClickhouse(
 
   const query = `
     SELECT response_id,
-      map('helicone_message', 'fetching body from signed_url... contact engineering@helicone.ai for more information') as response_body,
+      if(notEmpty(response_body), response_body, '{"helicone_message": "fetching body from signed_url... contact engineering@helicone.ai for more information"}') as response_body,
       response_created_at,
       toInt32(status) AS response_status,
       request_id,
-      map('helicone_message', 'fetching body from signed_url... contact engineering@helicone.ai for more information') as request_body,
+      if(notEmpty(request_body), request_body, '{"helicone_message": "fetching body from signed_url... contact engineering@helicone.ai for more information"}') as request_body,
       request_created_at,
       user_id AS request_user_id,
       properties AS request_properties,
       provider,
       toInt32(latency) AS delay_ms,
       model AS request_model,
+      ai_gateway_body_mapping,
       time_to_first_token,
-      (prompt_tokens + completion_tokens) AS total_tokens,
+      (prompt_tokens + completion_tokens + reasoning_tokens) AS total_tokens,
       completion_tokens,
+      reasoning_tokens,
       prompt_tokens,
+      prompt_cache_read_tokens,
+      prompt_cache_write_tokens,
       country_code,
       scores,
       properties,
       assets as asset_ids,
       target_url,
       cache_reference_id,
+      request_referrer,
       cache_enabled,
-      ${clickhousePriceCalcNonAggregated("request_response_rmt")} as cost_usd
-    FROM request_response_rmt FINAL
+      cost / ${COST_PRECISION_MULTIPLIER} as cost,
+      prompt_id,
+      prompt_version,
+      updated_at,
+      storage_location,
+      size_bytes
+    FROM request_response_rmt
     WHERE (
       (${builtFilter.filter})
+      AND request_created_at <= now() + INTERVAL 5 MINUTE
     )
     ${sortSQL !== undefined ? `ORDER BY ${sortSQL}` : ""}
     LIMIT ${limit}
@@ -280,8 +314,8 @@ export async function getRequestsClickhouse(
   );
 
   const s3Client = new S3Client(
-    process.env.S3_ACCESS_KEY ?? "",
-    process.env.S3_SECRET_KEY ?? "",
+    process.env.S3_ACCESS_KEY || undefined,
+    process.env.S3_SECRET_KEY || undefined,
     process.env.S3_ENDPOINT_PUBLIC ?? process.env.S3_ENDPOINT ?? "",
     process.env.S3_BUCKET_NAME ?? "",
     (process.env.S3_REGION as "us-west-2" | "eu-west-1") ?? "us-west-2"
@@ -299,60 +333,75 @@ async function mapLLMCalls(
 ): Promise<Result<HeliconeRequest[], string>> {
   const promises =
     heliconeRequests?.map(async (heliconeRequest) => {
-      // First retrieve s3 signed urls if past the implementation date
-      const s3ImplementationDate = new Date("2024-03-30T02:00:00Z");
-      const requestCreatedAt = new Date(heliconeRequest.request_created_at);
-      if (
-        (process.env.S3_ENABLED ?? "true") === "true" &&
-        requestCreatedAt > s3ImplementationDate
-      ) {
-        const { data: signedBodyUrl, error: signedBodyUrlErr } =
-          await s3Client.getRequestResponseBodySignedUrl(
-            orgId,
-            heliconeRequest.cache_reference_id === DEFAULT_UUID
-              ? heliconeRequest.request_id
-              : heliconeRequest.cache_reference_id ?? heliconeRequest.request_id
+      // Check storage location - if clickhouse, only parse JSON
+      if (heliconeRequest.storage_location === "clickhouse") {
+        // Parse JSON strings if they are strings
+        if (typeof heliconeRequest.response_body === "string") {
+          const parsed = safeJsonParse(heliconeRequest.response_body);
+          if (parsed) {
+            heliconeRequest.response_body = parsed;
+          }
+        }
+        if (typeof heliconeRequest.request_body === "string") {
+          const parsed = safeJsonParse(heliconeRequest.request_body);
+          if (parsed) {
+            heliconeRequest.request_body = parsed;
+          }
+        }
+        return heliconeRequest;
+      }
+
+      // If free tier limit exceeded, bodies were not stored - return as is
+      if (heliconeRequest.storage_location === "not_stored_exceeded_free") {
+        return heliconeRequest;
+      }
+
+      const { data: signedBodyUrl, error: signedBodyUrlErr } =
+        await s3Client.getRequestResponseBodySignedUrl(
+          orgId,
+          heliconeRequest.cache_reference_id === DEFAULT_UUID
+            ? heliconeRequest.request_id
+            : (heliconeRequest.cache_reference_id ?? heliconeRequest.request_id)
+        );
+
+      if (signedBodyUrlErr || !signedBodyUrl) {
+        // If there was an error, just return the request as is
+        return heliconeRequest;
+      }
+
+      heliconeRequest.signed_body_url = signedBodyUrl;
+
+      const assetUrls: Record<string, string> = {};
+
+      if (heliconeRequest.asset_ids) {
+        try {
+          const signedUrlPromises = heliconeRequest.asset_ids.map(
+            async (assetId: string) => {
+              const { data: signedImageUrl, error: signedImageUrlErr } =
+                await s3Client.getRequestResponseImageSignedUrl(
+                  orgId,
+                  heliconeRequest.request_id,
+                  assetId
+                );
+
+              return {
+                assetId,
+                signedImageUrl:
+                  signedImageUrlErr || !signedImageUrl ? "" : signedImageUrl,
+              };
+            }
           );
 
-        if (signedBodyUrlErr || !signedBodyUrl) {
-          // If there was an error, just return the request as is
+          const signedUrls = await Promise.all(signedUrlPromises);
+
+          signedUrls.forEach(({ assetId, signedImageUrl }) => {
+            assetUrls[assetId] = signedImageUrl;
+          });
+
+          heliconeRequest.asset_urls = assetUrls;
+        } catch (error) {
+          console.error(`Error fetching asset: ${error}`);
           return heliconeRequest;
-        }
-
-        heliconeRequest.signed_body_url = signedBodyUrl;
-
-        const assetUrls: Record<string, string> = {};
-
-        if (heliconeRequest.asset_ids) {
-          try {
-            const signedUrlPromises = heliconeRequest.asset_ids.map(
-              async (assetId: string) => {
-                const { data: signedImageUrl, error: signedImageUrlErr } =
-                  await s3Client.getRequestResponseImageSignedUrl(
-                    orgId,
-                    heliconeRequest.request_id,
-                    assetId
-                  );
-
-                return {
-                  assetId,
-                  signedImageUrl:
-                    signedImageUrlErr || !signedImageUrl ? "" : signedImageUrl,
-                };
-              }
-            );
-
-            const signedUrls = await Promise.all(signedUrlPromises);
-
-            signedUrls.forEach(({ assetId, signedImageUrl }) => {
-              assetUrls[assetId] = signedImageUrl;
-            });
-
-            heliconeRequest.asset_urls = assetUrls;
-          } catch (error) {
-            console.error(`Error fetching asset: ${error}`);
-            return heliconeRequest;
-          }
         }
       }
 

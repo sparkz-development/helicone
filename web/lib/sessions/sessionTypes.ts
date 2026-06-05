@@ -14,7 +14,7 @@ export interface Session {
   end_time_unix_timestamp_ms: number;
   session_id: string;
   session_tags: string[];
-  session_cost_usd: number;
+  session_cost: number;
   traces: Trace[];
 }
 
@@ -30,7 +30,7 @@ export interface TraceNode {
   parents: TraceNode[];
 }
 
-export type HeliconeRequestType = "Tool" | "LLM" | "VectorDB";
+export type HeliconeRequestType = "Tool" | "LLM" | "VectorDB" | "Data";
 
 export interface TreeNodeData {
   subPathName?: string;

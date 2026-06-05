@@ -24,6 +24,7 @@ export interface AuthParams {
   heliconeApiKeyId?: number;
   keyPermissions?: KeyPermissions;
   role?: Role;
+  tier?: string;
 }
 export type AuthResult = PromiseGenericResult<AuthParams>;
 
@@ -32,6 +33,8 @@ export interface OrgParams {
   id: string;
   percentLog: number;
   has_onboarded: boolean;
+  has_integrated: boolean;
+  freeLimitExceeded: string | null; // YYYY-MM format or null
 }
 
 export type OrgResult = PromiseGenericResult<OrgParams>;
@@ -53,6 +56,7 @@ export type HeliconeOrg = {
   domain: string | null;
   governance_settings: any | null;
   has_onboarded: boolean;
+  has_integrated: boolean;
   icon: string;
   id: string;
   is_main_org: boolean;

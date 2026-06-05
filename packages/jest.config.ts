@@ -11,6 +11,8 @@ const config: Config.InitialOptions = {
     "^@/(.*)$": "<rootDir>/$1",
   },
   testMatch: ["**/__tests__/**/*.test.(ts|tsx|js)"],
+  prettierPath: null, // Disable Prettier for snapshots
+  silent: true, // Suppress console output during tests
 };
 
 export default config;

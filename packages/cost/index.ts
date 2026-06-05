@@ -4,7 +4,21 @@
  */
 
 import { ModelRow } from "./interfaces/Cost";
-import { allCosts, defaultProvider, providers } from "./providers/mappings";
+import { defaultProvider, providers } from "./providers/mappings";
+import { COST_PRECISION_MULTIPLIER } from "./costCalc";
+
+export type { ModelRow } from "./interfaces/Cost";
+export { providers } from "./providers/mappings";
+export { modelCostBreakdownFromRegistry } from "./costCalc";
+export type { CostBreakdown } from "./models/calculate-cost";
+export { getUsageProcessor } from "./usage/getUsageProcessor";
+export type { ModelUsage } from "./usage/types";
+export type { ModelProviderName } from "./models/providers";
+
+export type ModelWithProvider = {
+  provider: string;
+  modelRow: ModelRow;
+};
 
 export function costOf({
   model,
@@ -12,7 +26,7 @@ export function costOf({
 }: {
   model: string;
   provider: string;
-}) {
+}): ModelRow["cost"] | null {
   const modelLower = model?.toLowerCase();
 
   if (!modelLower) {
@@ -30,13 +44,7 @@ export function costOf({
     return null;
   }
 
-  // We need to concat allCosts because we need to check the provider costs first and if it is not founder then fall back to make the best guess.
-  // This is because we did not backfill the provider on db yet, and we do not plan to
-  // This is really for legacy
-  // TODO: after 07/2024 we can probably remove this
-  const costs = providerCost.costs.concat(allCosts);
-
-  const cost = costs.find((cost) => {
+  const cost = providerCost.costs.find((cost) => {
     const valueLower = cost.model.value.toLowerCase();
     if (cost.model.operator === "equals") {
       return valueLower === modelLower;
@@ -47,7 +55,7 @@ export function costOf({
     }
   });
 
-  return cost?.cost;
+  return cost?.cost ?? null;
 }
 
 export function costOfPrompt({
@@ -59,8 +67,11 @@ export function costOfPrompt({
   promptAudioTokens,
   completionTokens,
   completionAudioTokens,
+  promptCacheWrite5m,
+  promptCacheWrite1h,
   images = 1,
   perCall = 1,
+  multiple,
 }: {
   provider: string;
   model: string;
@@ -70,9 +81,12 @@ export function costOfPrompt({
   promptAudioTokens: number;
   completionTokens: number;
   completionAudioTokens: number;
+  promptCacheWrite5m?: number;
+  promptCacheWrite1h?: number;
   images?: number;
   perCall?: number;
-}) {
+  multiple?: number;
+}): number | null {
   const cost = costOf({ model, provider });
   if (!cost) {
     return null;
@@ -85,7 +99,19 @@ export function costOfPrompt({
 
   // Add cost for cache write tokens if applicable
   if (cost.prompt_cache_write_token && promptCacheWriteTokens > 0) {
-    totalCost += promptCacheWriteTokens * cost.prompt_cache_write_token;
+    // For anthropic requests, the prompt cache write tokens are the sum of the 5m and 1h writes
+    // so we subtract to not double count
+    const effectivePromptCacheWriteTokens =
+      promptCacheWriteTokens -
+      (promptCacheWrite5m ?? 0) -
+      (promptCacheWrite1h ?? 0);
+    totalCost += effectivePromptCacheWriteTokens * cost.prompt_cache_write_token;
+    if (cost.prompt_cache_creation_5m && promptCacheWrite5m && promptCacheWrite5m > 0) {
+      totalCost += promptCacheWrite5m * cost.prompt_cache_creation_5m;
+    }
+    if (cost.prompt_cache_creation_1h && promptCacheWrite1h && promptCacheWrite1h > 0) {
+      totalCost += promptCacheWrite1h * cost.prompt_cache_creation_1h;
+    }
   } else if (promptCacheWriteTokens > 0) {
     totalCost += promptCacheWriteTokens * cost.prompt_token;
   }
@@ -119,126 +145,161 @@ export function costOfPrompt({
   const perCallCost = perCall * (cost.per_call ?? 0);
   totalCost += imageCost + perCallCost;
 
+  if (multiple !== undefined) {
+    return Math.round(totalCost * multiple);
+  }
+
   return totalCost;
 }
 
-function caseForCost(costs: ModelRow[], table: string, multiple: number) {
+function caseForCost(
+  costs: ModelRow[],
+  table: string,
+  multiple: number,
+  useDefaultCost: boolean = false,
+  optimized: boolean = false
+) {
+  const validCases = costs.map((cost) => {
+    const costPerMultiple = {
+      prompt: Math.round(cost.cost.prompt_token * multiple),
+      completion: Math.round(cost.cost.completion_token * multiple),
+      prompt_audio: Math.round(
+        (cost.cost.prompt_audio_token ?? cost.cost.prompt_token) * multiple
+      ),
+      completion_audio: Math.round(
+        (cost.cost.completion_audio_token ?? cost.cost.completion_token) *
+          multiple
+      ),
+      prompt_cache_write: Math.round(
+        (cost.cost.prompt_cache_write_token ?? cost.cost.prompt_token) *
+          multiple
+      ),
+      prompt_cache_read: Math.round(
+        (cost.cost.prompt_cache_read_token ?? cost.cost.prompt_token) * multiple
+      ),
+      image: Math.round((cost.cost.per_image ?? 0) * multiple),
+      per_call: Math.round((cost.cost.per_call ?? 0) * multiple),
+    };
+
+    const costParts = [];
+    if (costPerMultiple.prompt > 0) {
+      costParts.push(`${costPerMultiple.prompt} * ${table}.prompt_tokens`);
+    }
+    if (costPerMultiple.completion > 0) {
+      costParts.push(
+        `${costPerMultiple.completion} * ${table}.completion_tokens`
+      );
+    }
+    if (costPerMultiple.prompt_audio > 0) {
+      costParts.push(
+        `${costPerMultiple.prompt_audio} * ${table}.prompt_audio_tokens`
+      );
+    }
+    if (costPerMultiple.completion_audio > 0) {
+      costParts.push(
+        `${costPerMultiple.completion_audio} * ${table}.completion_audio_tokens`
+      );
+    }
+    if (costPerMultiple.prompt_cache_write > 0) {
+      costParts.push(
+        `${costPerMultiple.prompt_cache_write} * ${table}.prompt_cache_write_tokens`
+      );
+    }
+    if (costPerMultiple.prompt_cache_read > 0) {
+      costParts.push(
+        `${costPerMultiple.prompt_cache_read} * ${table}.prompt_cache_read_tokens`
+      );
+    }
+    if (costPerMultiple.image > 0) {
+      costParts.push(`${costPerMultiple.image}`); // Assuming image cost is per image, not per token
+    }
+    if (costPerMultiple.per_call > 0) {
+      costParts.push(`${costPerMultiple.per_call}`); // Assuming per_call cost is per call
+    }
+
+    const costString = costParts.length > 0 ? costParts.join(" + ") : "0";
+
+    if (cost.model.operator === "equals") {
+      const op = optimized ? "=" : "ILIKE";
+      return `WHEN (${table}.model ${op} '${cost.model.value}') THEN ${costString}`;
+    } else if (cost.model.operator === "startsWith") {
+      return `WHEN (${table}.model LIKE '${cost.model.value}%') THEN ${costString}`;
+    } else if (cost.model.operator === "includes") {
+      return `WHEN (${table}.model ILIKE '%${cost.model.value}%') THEN ${costString}`;
+    } else {
+      throw new Error("Unknown operator");
+    }
+  });
+
   return `
   CASE
-  ${costs
-    .map((cost) => {
-      const costPerMultiple = {
-        prompt: Math.round(cost.cost.prompt_token * multiple),
-        completion: Math.round(cost.cost.completion_token * multiple),
-        prompt_audio: Math.round(
-          (cost.cost.prompt_audio_token ?? cost.cost.prompt_token) * multiple
-        ),
-        completion_audio: Math.round(
-          (cost.cost.completion_audio_token ?? cost.cost.completion_token) *
-            multiple
-        ),
-        prompt_cache_write: Math.round(
-          (cost.cost.prompt_cache_write_token ?? cost.cost.prompt_token) *
-            multiple
-        ),
-        prompt_cache_read: Math.round(
-          (cost.cost.prompt_cache_read_token ?? cost.cost.prompt_token) *
-            multiple
-        ),
-        image: Math.round((cost.cost.per_image ?? 0) * multiple),
-        per_call: Math.round((cost.cost.per_call ?? 0) * multiple),
-      };
-
-      const costParts = [];
-      if (costPerMultiple.prompt > 0) {
-        costParts.push(`${costPerMultiple.prompt} * ${table}.prompt_tokens`);
-      }
-      if (costPerMultiple.completion > 0) {
-        costParts.push(
-          `${costPerMultiple.completion} * ${table}.completion_tokens`
-        );
-      }
-      if (costPerMultiple.prompt_audio > 0) {
-        costParts.push(
-          `${costPerMultiple.prompt_audio} * ${table}.prompt_audio_tokens`
-        );
-      }
-      if (costPerMultiple.completion_audio > 0) {
-        costParts.push(
-          `${costPerMultiple.completion_audio} * ${table}.completion_audio_tokens`
-        );
-      }
-      if (costPerMultiple.prompt_cache_write > 0) {
-        costParts.push(
-          `${costPerMultiple.prompt_cache_write} * ${table}.prompt_cache_write_tokens`
-        );
-      }
-      if (costPerMultiple.prompt_cache_read > 0) {
-        costParts.push(
-          `${costPerMultiple.prompt_cache_read} * ${table}.prompt_cache_read_tokens`
-        );
-      }
-      if (costPerMultiple.image > 0) {
-        costParts.push(`${costPerMultiple.image}`); // Assuming image cost is per image, not per token
-      }
-      if (costPerMultiple.per_call > 0) {
-        costParts.push(`${costPerMultiple.per_call}`); // Assuming per_call cost is per call
-      }
-
-      if (costParts.length > 0) {
-        const costString = costParts.join(" + ");
-        if (cost.model.operator === "equals") {
-          return `WHEN (${table}.model ILIKE '${cost.model.value}') THEN ${costString}`;
-        } else if (cost.model.operator === "startsWith") {
-          return `WHEN (${table}.model LIKE '${cost.model.value}%') THEN ${costString}`;
-        } else if (cost.model.operator === "includes") {
-          return `WHEN (${table}.model ILIKE '%${cost.model.value}%') THEN ${costString}`;
-        } else {
-          throw new Error("Unknown operator");
-        }
-      } else {
-        return ``; // Return empty string if no costs apply for this model
-      }
-    })
-    .join("\n")}
-  ELSE 0
+  ${validCases.join("\n")}
+  ELSE ${useDefaultCost ? `toInt64(${table}.cost)` : `toInt64(0)`}
 END
 `;
 }
-export const COST_MULTIPLE = 1_000_000_000;
 
-export function clickhousePriceCalcNonAggregated(table: string) {
-  // This is so that we don't need to do any floating point math in the database
-  // and we can just divide by 1_000_000 to get the cost in dollars
+// Current only used for backfilling costs via admin.
+export function clickhouseModelFilter(
+  rows: ModelWithProvider[],
+  table = "request_response_rmt"
+) {
+  const uniqueProviders = Array.from(new Set(rows.map((row) => row.provider)));
 
-  const providersWithCosts = providers.filter(
-    (p) => p.costs && defaultProvider.provider !== p.provider
-  );
-  if (!defaultProvider.costs) {
-    throw new Error("Default provider does not have costs");
-  }
   return `
-(
-  CASE
-    ${providersWithCosts
-      .map((provider) => {
-        if (!provider.costs) {
-          throw new Error("Provider does not have costs");
+  (
+    (${rows
+      .map((row) => {
+        if (row.modelRow.model.operator === "equals") {
+          return `${table}.model = '${row.modelRow.model.value}'`;
+        } else if (row.modelRow.model.operator === "startsWith") {
+          return `${table}.model LIKE '${row.modelRow.model.value}%'`;
+        } else if (row.modelRow.model.operator === "includes") {
+          return `${table}.model ILIKE '%${row.modelRow.model.value}%'`;
+        } else {
+          throw new Error("Unknown operator");
         }
-        return `    WHEN (${table}.provider = '${provider.provider}') 
-      THEN (${caseForCost(provider.costs, table, COST_MULTIPLE)})`;
       })
-      .join("\n")}
-    ELSE (${caseForCost(defaultProvider.costs, table, COST_MULTIPLE)})
-  END
-) / ${COST_MULTIPLE}
+      .join(" OR ")})
+    AND
+    (${table}.provider IN (${uniqueProviders.map((provider) => `'${provider}'`).join(",")}))
+  )
+  `;
+}
+
+// Currently only used for backfilling costs via admin.
+// If not chunked, the query will be too large for Clickhouse.
+export function clickhousePriceCalcNonAggregated(
+  models: ModelWithProvider[],
+  table = "request_response_rmt"
+) {
+  const modelsByProvider = models.reduce(
+    (acc, model) => {
+      if (!acc[model.provider]) {
+        acc[model.provider] = [];
+      }
+      acc[model.provider].push(model.modelRow);
+      return acc;
+    },
+    {} as Record<string, ModelRow[]>
+  );
+
+  return `
+  (
+    CASE
+    ${Object.entries(modelsByProvider)
+      .map(([provider, modelRows]) => {
+        return `WHEN (${table}.provider = '${provider}') 
+      THEN (${caseForCost(modelRows, table, COST_PRECISION_MULTIPLIER)})`;
+      })
+      .join("\n    ")}
+    ELSE 0
+    END
+  )
 `;
 }
 
-export function clickhousePriceCalc(table: string) {
-  // This is so that we don't need to do any floating point math in the database
-  // and we can just divide by 1_000_000 to get the cost in dollars
-
+export function clickhousePriceCalc(table: string, inDollars: boolean = true) {
   const providersWithCosts = providers.filter(
     (p) => p.costs && defaultProvider.provider !== p.provider
   );
@@ -256,11 +317,11 @@ sum(
 
       return `WHEN (${table}.provider = '${
         provider.provider
-      }') THEN (${caseForCost(provider.costs, table, COST_MULTIPLE)})`;
+      }') THEN (${caseForCost(provider.costs, table, COST_PRECISION_MULTIPLIER)})`;
     })
     .join("\n")}
-    ELSE ${caseForCost(defaultProvider.costs, table, COST_MULTIPLE)}
+    ELSE ${caseForCost(defaultProvider.costs, table, COST_PRECISION_MULTIPLIER)}
   END
-  ) / ${COST_MULTIPLE}
+  ) ${inDollars ? `/ ${COST_PRECISION_MULTIPLIER}` : ""}
 `;
 }

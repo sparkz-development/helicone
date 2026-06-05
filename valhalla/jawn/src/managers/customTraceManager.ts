@@ -1,5 +1,5 @@
 import { HeliconeHeaders } from "../../../../shared/proxy/heliconeHeaders";
-import { HeliconeQueueProducer } from "../lib/clients/HeliconeQuequeProducer";
+import { HeliconeQueueProducer } from "../lib/clients/HeliconeQueueProducer";
 import type { KafkaMessageContents } from "../lib/handlers/HandlerContext";
 import { S3Client } from "../lib/shared/db/s3Client";
 import { AuthParams } from "../packages/common/auth/types";
@@ -55,9 +55,9 @@ const getTime = (
     | string
 ) => {
   if (typeof time === "string") {
-    /// is numnber as string check using regex
     if (/^\d+$/.test(time)) {
-      return new Date(parseInt(time));
+      const timestamp = parseInt(time);
+      return timestamp < 4102444800 ? new Date(timestamp * 1000) : new Date(timestamp);
     }
     return new Date(time);
   }
@@ -78,8 +78,8 @@ export class CustomTraceManager {
   private s3Client: S3Client;
   constructor() {
     this.s3Client = new S3Client(
-      process.env.S3_ACCESS_KEY ?? "",
-      process.env.S3_SECRET_KEY ?? "",
+      process.env.S3_ACCESS_KEY || undefined,
+      process.env.S3_SECRET_KEY || undefined,
       process.env.S3_ENDPOINT ?? "",
       process.env.S3_BUCKET_NAME ?? "",
       process.env.S3_REGION ?? "",

@@ -221,7 +221,67 @@ export type BlogStructure =
 export const BLOG_CONTENT: BlogStructure[] = [
   {
     dynmaicEntry: {
-      folderName: "complete-guide-to-debugging-llm-applications",
+      folderName: "joining-mintlify",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "ptb-gateway-launch",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "mcp-blog",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "what-is-ai-gateway",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "openrouter-alternatives",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "how-to-gateway",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "n8n-helicone-node",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "export-logs",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "migration-openrouter",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "how-ai-gateways-enhance-app-reliability",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "openrouter-down",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "top-llm-gateways-comparison-2025",
+    },
+  },
+  {
+    dynmaicEntry: {
+      folderName: "introducing-ai-gateway",
     },
   },
   {

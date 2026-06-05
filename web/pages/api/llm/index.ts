@@ -1,9 +1,10 @@
 import { dbExecute } from "@/lib/api/db/dbExecute";
 import { HandlerWrapperOptions, withAuth } from "@/lib/api/handlerWrappers";
-import { GenerateParams } from "@/lib/api/llm/generate";
+import { GenerateParams } from "@/lib/api/llm-old/generate";
 import { getOpenAIKeyFromAdmin } from "@/lib/clients/settings";
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
+import { logger } from "@/lib/telemetry/logger";
 
 // Cache for the OpenAI client to avoid recreating it on every request
 let openaiClient: OpenAI | null = null;
@@ -12,7 +13,7 @@ let isOnPrem = false;
 // Function to get or create the OpenAI client
 async function getOpenAIClient(
   orgId: string,
-  userEmail: string
+  userEmail: string,
 ): Promise<OpenAI> {
   // Return cached client if available
   if (openaiClient) {
@@ -27,12 +28,12 @@ async function getOpenAIClient(
     provider_name: string;
   }>(
     `SELECT id, org_id, decrypted_provider_key, provider_key_name, provider_name
-     FROM decrypted_provider_keys
+     FROM decrypted_provider_keys_v2
      WHERE org_id = $1
      AND soft_delete = false
      AND provider_name = 'OpenRouter'
      LIMIT 1`,
-    [orgId]
+    [orgId],
   );
 
   // Create and cache the client
@@ -159,7 +160,7 @@ async function handler({ req, res, userData }: HandlerWrapperOptions<any>) {
       } as any,
       {
         signal: abortController.signal,
-      }
+      },
     );
 
     if (params.stream) {
@@ -189,7 +190,7 @@ async function handler({ req, res, userData }: HandlerWrapperOptions<any>) {
         }
       } catch (error) {
         // Handle stream interruption gracefully
-        console.error("[API Stream] Stream error:", error); // Log the error
+        logger.error({ error }, "[API Stream] Stream error"); // Log the error
         if (
           error instanceof Error &&
           (error.name === "ResponseAborted" || error.name === "AbortError")
@@ -216,8 +217,8 @@ async function handler({ req, res, userData }: HandlerWrapperOptions<any>) {
     if (!content && !calls) {
       // Check if both content and calls are missing
       // Consider if an empty response should be an error or just empty strings
-      console.warn(
-        "[API] LLM call resulted in empty content and no tool calls."
+      logger.warn(
+        "[API] LLM call resulted in empty content and no tool calls.",
       );
       // Returning empty object might be fine depending on requirements
       // throw new Error("Failed to generate response content or tool calls");
@@ -232,7 +233,7 @@ async function handler({ req, res, userData }: HandlerWrapperOptions<any>) {
     ) {
       return res.json({ content: "" });
     }
-    console.error("Generation error:", error);
+    logger.error({ error }, "Generation error");
     return res.status(500).json({ error: "Failed to generate response" });
   }
 }

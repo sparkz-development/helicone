@@ -33,13 +33,6 @@ export type Database = {
             foreignKeyName: "admins_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "admins_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
             referencedRelation: "users_view"
             referencedColumns: ["id"]
           },
@@ -187,68 +180,6 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organization"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      asset: {
-        Row: {
-          created_at: string
-          id: string
-          organization_id: string
-          request_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          organization_id: string
-          request_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          organization_id?: string
-          request_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "asset_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organization"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "asset_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      cache_hits: {
-        Row: {
-          created_at: string
-          organization_id: string | null
-          request_id: string
-        }
-        Insert: {
-          created_at?: string
-          organization_id?: string | null
-          request_id: string
-        }
-        Update: {
-          created_at?: string
-          organization_id?: string | null
-          request_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "cache_hits_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
             referencedColumns: ["id"]
           },
         ]
@@ -502,13 +433,6 @@ export type Database = {
             referencedRelation: "helicone_dataset"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "public_experiment_dataset_v2_row_input_record_fkey"
-            columns: ["input_record"]
-            isOneToOne: false
-            referencedRelation: "prompt_input_record"
-            referencedColumns: ["id"]
-          },
         ]
       }
       experiment_output: {
@@ -548,24 +472,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "public_experiment_output_input_record_id_fkey"
-            columns: ["input_record_id"]
-            isOneToOne: false
-            referencedRelation: "prompt_input_record"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "public_experiment_output_prompt_version_id_fkey"
             columns: ["prompt_version_id"]
             isOneToOne: false
             referencedRelation: "prompts_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "public_experiment_output_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
             referencedColumns: ["id"]
           },
         ]
@@ -691,7 +601,7 @@ export type Database = {
             foreignKeyName: "public_experiment_v2_hypothesis_provider_key_fkey"
             columns: ["provider_key"]
             isOneToOne: false
-            referencedRelation: "decrypted_provider_keys"
+            referencedRelation: "decrypted_provider_keys_v2"
             referencedColumns: ["id"]
           },
           {
@@ -738,13 +648,6 @@ export type Database = {
             columns: ["experiment_hypothesis"]
             isOneToOne: false
             referencedRelation: "experiment_v2_hypothesis"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "public_experiment_v2_hypothesis_run_result_request_id_fkey"
-            columns: ["result_request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
             referencedColumns: ["id"]
           },
         ]
@@ -851,34 +754,41 @@ export type Database = {
           },
         ]
       }
-      feedback: {
+      feature_waitlist: {
         Row: {
           created_at: string
-          id: string
-          rating: boolean
-          response_id: string
+          email: string
+          feature: string
+          id: number
+          is_customer: boolean | null
+          metadata: Json | null
+          organization_id: string | null
+          original_position: number | null
+          priority_boost: number | null
         }
         Insert: {
           created_at?: string
-          id?: string
-          rating: boolean
-          response_id: string
+          email: string
+          feature: string
+          id?: number
+          is_customer?: boolean | null
+          metadata?: Json | null
+          organization_id?: string | null
+          original_position?: number | null
+          priority_boost?: number | null
         }
         Update: {
           created_at?: string
-          id?: string
-          rating?: boolean
-          response_id?: string
+          email?: string
+          feature?: string
+          id?: number
+          is_customer?: boolean | null
+          metadata?: Json | null
+          organization_id?: string | null
+          original_position?: number | null
+          priority_boost?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "feedback_response_id_fkey"
-            columns: ["response_id"]
-            isOneToOne: true
-            referencedRelation: "response"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       finetune_dataset: {
         Row: {
@@ -949,13 +859,6 @@ export type Database = {
             referencedRelation: "organization"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "finetune_dataset_data_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
         ]
       }
       finetune_job: {
@@ -1005,7 +908,7 @@ export type Database = {
             foreignKeyName: "finetune_job_provider_key_id_fkey"
             columns: ["provider_key_id"]
             isOneToOne: false
-            referencedRelation: "decrypted_provider_keys"
+            referencedRelation: "decrypted_provider_keys_v2"
             referencedColumns: ["id"]
           },
           {
@@ -1028,6 +931,7 @@ export type Database = {
           organization_id: string
           soft_delete: boolean
           temp_key: boolean
+          updated_at: string | null
           user_id: string
         }
         Insert: {
@@ -1040,6 +944,7 @@ export type Database = {
           organization_id: string
           soft_delete?: boolean
           temp_key?: boolean
+          updated_at?: string | null
           user_id: string
         }
         Update: {
@@ -1052,6 +957,7 @@ export type Database = {
           organization_id?: string
           soft_delete?: boolean
           temp_key?: boolean
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1060,13 +966,6 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organization"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "helicone_api_keys_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -1236,7 +1135,7 @@ export type Database = {
             foreignKeyName: "helicone_proxy_keys_provider_key_id_fkey"
             columns: ["provider_key_id"]
             isOneToOne: false
-            referencedRelation: "decrypted_provider_keys"
+            referencedRelation: "decrypted_provider_keys_v2"
             referencedColumns: ["id"]
           },
           {
@@ -1266,6 +1165,42 @@ export type Database = {
           id?: string
           name?: string
           settings?: Json
+        }
+        Relationships: []
+      }
+      in_app_threads: {
+        Row: {
+          chat: Json
+          created_at: string
+          escalated: boolean
+          id: string
+          metadata: Json
+          org_id: string
+          soft_delete: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chat: Json
+          created_at?: string
+          escalated?: boolean
+          id?: string
+          metadata: Json
+          org_id: string
+          soft_delete?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chat?: Json
+          created_at?: string
+          escalated?: boolean
+          id?: string
+          metadata?: Json
+          org_id?: string
+          soft_delete?: boolean
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1303,6 +1238,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      intercom_slack_mappings: {
+        Row: {
+          created_at: string | null
+          id: string
+          intercom_conversation_id: string
+          intercom_message_id: string
+          slack_channel_id: string
+          slack_message_ts: string
+          slack_thread_ts: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          intercom_conversation_id: string
+          intercom_message_id: string
+          slack_channel_id: string
+          slack_message_ts: string
+          slack_thread_ts: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          intercom_conversation_id?: string
+          intercom_message_id?: string
+          slack_channel_id?: string
+          slack_message_ts?: string
+          slack_thread_ts?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       job: {
         Row: {
@@ -1485,13 +1453,6 @@ export type Database = {
             referencedRelation: "job_node"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "job_node_request_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
         ]
       }
       layout: {
@@ -1520,13 +1481,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "layout_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "layout_user_id_fkey"
             columns: ["user_id"]
@@ -1653,26 +1607,29 @@ export type Database = {
       }
       organization: {
         Row: {
+          allow_negative_balance: boolean
           color: string
           created_at: string | null
+          credit_limit: number
           domain: string | null
+          gateway_discount_enabled: boolean
           governance_settings: Json | null
+          has_integrated: boolean
           has_onboarded: boolean
           icon: string
           id: string
           is_main_org: boolean
           is_personal: boolean
           limits: Json | null
-          logo_path: string | null
           name: string
           onboarding_status: Json
           org_provider_key: string | null
           organization_type: string
           owner: string
           percent_to_log: number | null
+          playground_helicone: boolean
           referral: string | null
           request_limit: number | null
-          reseller_id: string | null
           size: string | null
           soft_delete: boolean
           stripe_customer_id: string | null
@@ -1683,26 +1640,29 @@ export type Database = {
           tier: string | null
         }
         Insert: {
+          allow_negative_balance?: boolean
           color?: string
           created_at?: string | null
+          credit_limit?: number
           domain?: string | null
+          gateway_discount_enabled?: boolean
           governance_settings?: Json | null
+          has_integrated?: boolean
           has_onboarded?: boolean
           icon?: string
           id?: string
           is_main_org?: boolean
           is_personal?: boolean
           limits?: Json | null
-          logo_path?: string | null
           name: string
           onboarding_status?: Json
           org_provider_key?: string | null
           organization_type?: string
           owner: string
           percent_to_log?: number | null
+          playground_helicone?: boolean
           referral?: string | null
           request_limit?: number | null
-          reseller_id?: string | null
           size?: string | null
           soft_delete?: boolean
           stripe_customer_id?: string | null
@@ -1713,26 +1673,29 @@ export type Database = {
           tier?: string | null
         }
         Update: {
+          allow_negative_balance?: boolean
           color?: string
           created_at?: string | null
+          credit_limit?: number
           domain?: string | null
+          gateway_discount_enabled?: boolean
           governance_settings?: Json | null
+          has_integrated?: boolean
           has_onboarded?: boolean
           icon?: string
           id?: string
           is_main_org?: boolean
           is_personal?: boolean
           limits?: Json | null
-          logo_path?: string | null
           name?: string
           onboarding_status?: Json
           org_provider_key?: string | null
           organization_type?: string
           owner?: string
           percent_to_log?: number | null
+          playground_helicone?: boolean
           referral?: string | null
           request_limit?: number | null
-          reseller_id?: string | null
           size?: string | null
           soft_delete?: boolean
           stripe_customer_id?: string | null
@@ -1747,7 +1710,7 @@ export type Database = {
             foreignKeyName: "organization_org_provider_key_fkey"
             columns: ["org_provider_key"]
             isOneToOne: false
-            referencedRelation: "decrypted_provider_keys"
+            referencedRelation: "decrypted_provider_keys_v2"
             referencedColumns: ["id"]
           },
           {
@@ -1761,20 +1724,50 @@ export type Database = {
             foreignKeyName: "organization_owner_fkey"
             columns: ["owner"]
             isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "organization_owner_fkey"
-            columns: ["owner"]
-            isOneToOne: false
             referencedRelation: "users_view"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      organization_auto_topoff: {
+        Row: {
+          consecutive_failures: number
+          created_at: string
+          enabled: boolean
+          last_topoff_at: string | null
+          organization_id: string
+          stripe_payment_method_id: string | null
+          threshold_cents: number
+          topoff_amount_cents: number
+          updated_at: string
+        }
+        Insert: {
+          consecutive_failures?: number
+          created_at?: string
+          enabled?: boolean
+          last_topoff_at?: string | null
+          organization_id: string
+          stripe_payment_method_id?: string | null
+          threshold_cents: number
+          topoff_amount_cents: number
+          updated_at?: string
+        }
+        Update: {
+          consecutive_failures?: number
+          created_at?: string
+          enabled?: boolean
+          last_topoff_at?: string | null
+          organization_id?: string
+          stripe_payment_method_id?: string | null
+          threshold_cents?: number
+          topoff_amount_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
           {
-            foreignKeyName: "organization_reseller_id_fkey"
-            columns: ["reseller_id"]
-            isOneToOne: false
+            foreignKeyName: "organization_auto_topoff_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
             referencedRelation: "organization"
             referencedColumns: ["id"]
           },
@@ -1835,13 +1828,6 @@ export type Database = {
           organization?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "organization_member_member_fkey"
-            columns: ["member"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "organization_member_member_fkey"
             columns: ["member"]
@@ -1966,58 +1952,6 @@ export type Database = {
           },
         ]
       }
-      prompt_input_record: {
-        Row: {
-          auto_prompt_inputs: Json
-          created_at: string | null
-          experiment_id: string | null
-          id: string
-          inputs: Json
-          prompt_version: string
-          source_request: string | null
-        }
-        Insert: {
-          auto_prompt_inputs?: Json
-          created_at?: string | null
-          experiment_id?: string | null
-          id?: string
-          inputs: Json
-          prompt_version: string
-          source_request?: string | null
-        }
-        Update: {
-          auto_prompt_inputs?: Json
-          created_at?: string | null
-          experiment_id?: string | null
-          id?: string
-          inputs?: Json
-          prompt_version?: string
-          source_request?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "fk_prompt_version"
-            columns: ["prompt_version"]
-            isOneToOne: false
-            referencedRelation: "prompts_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fk_source_request"
-            columns: ["source_request"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "public_prompt_input_record_experiment_id_fkey"
-            columns: ["experiment_id"]
-            isOneToOne: false
-            referencedRelation: "experiment_v3"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       prompt_v2: {
         Row: {
           created_at: string | null
@@ -2058,6 +1992,105 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      prompts_2025: {
+        Row: {
+          created_at: string
+          id: string
+          name: string | null
+          organization: string
+          production_version: string | null
+          soft_delete: boolean
+          tags: string[] | null
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          name?: string | null
+          organization: string
+          production_version?: string | null
+          soft_delete?: boolean
+          tags?: string[] | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          organization?: string
+          production_version?: string | null
+          soft_delete?: boolean
+          tags?: string[] | null
+        }
+        Relationships: []
+      }
+      prompts_2025_inputs: {
+        Row: {
+          created_at: string
+          environment: string | null
+          id: string
+          inputs: Json
+          request_id: string
+          version_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          environment?: string | null
+          id?: string
+          inputs: Json
+          request_id: string
+          version_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          environment?: string | null
+          id?: string
+          inputs?: Json
+          request_id?: string
+          version_id?: string | null
+        }
+        Relationships: []
+      }
+      prompts_2025_versions: {
+        Row: {
+          commit_message: string | null
+          created_at: string
+          created_by: string | null
+          environment: string | null
+          id: string
+          major_version: number
+          minor_version: number | null
+          model: string
+          organization: string
+          prompt_id: string
+          soft_delete: boolean
+        }
+        Insert: {
+          commit_message?: string | null
+          created_at?: string
+          created_by?: string | null
+          environment?: string | null
+          id?: string
+          major_version: number
+          minor_version?: number | null
+          model: string
+          organization: string
+          prompt_id: string
+          soft_delete?: boolean
+        }
+        Update: {
+          commit_message?: string | null
+          created_at?: string
+          created_by?: string | null
+          environment?: string | null
+          id?: string
+          major_version?: number
+          minor_version?: number | null
+          model?: string
+          organization?: string
+          prompt_id?: string
+          soft_delete?: boolean
+        }
+        Relationships: []
       }
       prompts_versions: {
         Row: {
@@ -2166,20 +2199,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "properties_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "properties_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "properties_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -2190,66 +2209,57 @@ export type Database = {
       }
       provider_keys: {
         Row: {
+          auth_type: string
+          byok_enabled: boolean
           config: Json | null
           created_at: string | null
+          cuid: string | null
           id: string
-          key_id: string
-          nonce: string
+          key_id: string | null
+          nonce: string | null
           org_id: string
-          provider_key: string
+          provider_key: string | null
           provider_key_name: string
           provider_name: string
+          provider_secret_key: string | null
           soft_delete: boolean
           vault_key_id: string | null
         }
         Insert: {
+          auth_type?: string
+          byok_enabled?: boolean
           config?: Json | null
           created_at?: string | null
+          cuid?: string | null
           id?: string
-          key_id?: string
-          nonce?: string
+          key_id?: string | null
+          nonce?: string | null
           org_id: string
-          provider_key: string
+          provider_key?: string | null
           provider_key_name: string
           provider_name: string
+          provider_secret_key?: string | null
           soft_delete?: boolean
           vault_key_id?: string | null
         }
         Update: {
+          auth_type?: string
+          byok_enabled?: boolean
           config?: Json | null
           created_at?: string | null
+          cuid?: string | null
           id?: string
-          key_id?: string
-          nonce?: string
+          key_id?: string | null
+          nonce?: string | null
           org_id?: string
-          provider_key?: string
+          provider_key?: string | null
           provider_key_name?: string
           provider_name?: string
+          provider_secret_key?: string | null
           soft_delete?: boolean
           vault_key_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "provider_keys_key_id_fkey"
-            columns: ["key_id"]
-            isOneToOne: false
-            referencedRelation: "decrypted_key"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_keys_key_id_fkey"
-            columns: ["key_id"]
-            isOneToOne: false
-            referencedRelation: "key"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_keys_key_id_fkey"
-            columns: ["key_id"]
-            isOneToOne: false
-            referencedRelation: "valid_key"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "provider_keys_org_id_fkey"
             columns: ["org_id"]
@@ -2286,134 +2296,12 @@ export type Database = {
             foreignKeyName: "referrals_referred_user_id_fkey"
             columns: ["referred_user_id"]
             isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "referrals_referred_user_id_fkey"
-            columns: ["referred_user_id"]
-            isOneToOne: false
             referencedRelation: "users_view"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "referrals_referrer_user_id_fkey"
             columns: ["referrer_user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "referrals_referrer_user_id_fkey"
-            columns: ["referrer_user_id"]
-            isOneToOne: false
-            referencedRelation: "users_view"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      request: {
-        Row: {
-          auth_hash: string
-          country_code: string | null
-          created_at: string
-          formatted_prompt_id: string | null
-          helicone_api_key_id: number | null
-          helicone_org_id: string | null
-          helicone_proxy_key_id: string | null
-          helicone_user: string | null
-          id: string
-          model: string | null
-          model_override: string | null
-          path: string
-          prompt_id: string | null
-          prompt_values: Json | null
-          properties: Json | null
-          provider: string
-          request_ip: string | null
-          target_url: string | null
-          threat: boolean | null
-          user_id: string | null
-          version: number
-        }
-        Insert: {
-          auth_hash: string
-          country_code?: string | null
-          created_at?: string
-          formatted_prompt_id?: string | null
-          helicone_api_key_id?: number | null
-          helicone_org_id?: string | null
-          helicone_proxy_key_id?: string | null
-          helicone_user?: string | null
-          id?: string
-          model?: string | null
-          model_override?: string | null
-          path: string
-          prompt_id?: string | null
-          prompt_values?: Json | null
-          properties?: Json | null
-          provider?: string
-          request_ip?: string | null
-          target_url?: string | null
-          threat?: boolean | null
-          user_id?: string | null
-          version?: number
-        }
-        Update: {
-          auth_hash?: string
-          country_code?: string | null
-          created_at?: string
-          formatted_prompt_id?: string | null
-          helicone_api_key_id?: number | null
-          helicone_org_id?: string | null
-          helicone_proxy_key_id?: string | null
-          helicone_user?: string | null
-          id?: string
-          model?: string | null
-          model_override?: string | null
-          path?: string
-          prompt_id?: string | null
-          prompt_values?: Json | null
-          properties?: Json | null
-          provider?: string
-          request_ip?: string | null
-          target_url?: string | null
-          threat?: boolean | null
-          user_id?: string | null
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "request_helicone_api_key_id_fkey"
-            columns: ["helicone_api_key_id"]
-            isOneToOne: false
-            referencedRelation: "helicone_api_keys"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "request_helicone_org_id_fkey"
-            columns: ["helicone_org_id"]
-            isOneToOne: false
-            referencedRelation: "organization"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "request_helicone_proxy_key_id_fkey"
-            columns: ["helicone_proxy_key_id"]
-            isOneToOne: false
-            referencedRelation: "helicone_proxy_keys"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "request_helicone_user_fkey"
-            columns: ["helicone_user"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "request_helicone_user_fkey"
-            columns: ["helicone_user"]
             isOneToOne: false
             referencedRelation: "users_view"
             referencedColumns: ["id"]
@@ -2445,13 +2333,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "request_job_task_request_id_fkey"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "request_job_task_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
@@ -2459,60 +2340,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      response: {
-        Row: {
-          completion_audio_tokens: number | null
-          completion_tokens: number | null
-          created_at: string
-          delay_ms: number | null
-          feedback: Json | null
-          helicone_org_id: string | null
-          id: string
-          model: string | null
-          prompt_audio_tokens: number | null
-          prompt_cache_read_tokens: number | null
-          prompt_cache_write_tokens: number | null
-          prompt_tokens: number | null
-          request: string
-          status: number | null
-          time_to_first_token: number | null
-        }
-        Insert: {
-          completion_audio_tokens?: number | null
-          completion_tokens?: number | null
-          created_at?: string
-          delay_ms?: number | null
-          feedback?: Json | null
-          helicone_org_id?: string | null
-          id?: string
-          model?: string | null
-          prompt_audio_tokens?: number | null
-          prompt_cache_read_tokens?: number | null
-          prompt_cache_write_tokens?: number | null
-          prompt_tokens?: number | null
-          request: string
-          status?: number | null
-          time_to_first_token?: number | null
-        }
-        Update: {
-          completion_audio_tokens?: number | null
-          completion_tokens?: number | null
-          created_at?: string
-          delay_ms?: number | null
-          feedback?: Json | null
-          helicone_org_id?: string | null
-          id?: string
-          model?: string | null
-          prompt_audio_tokens?: number | null
-          prompt_cache_read_tokens?: number | null
-          prompt_cache_write_tokens?: number | null
-          prompt_tokens?: number | null
-          request?: string
-          status?: number | null
-          time_to_first_token?: number | null
-        }
-        Relationships: []
       }
       rosetta_mappers: {
         Row: {
@@ -2558,6 +2385,105 @@ export type Database = {
           version?: number
         }
         Relationships: []
+      }
+      router_config_versions: {
+        Row: {
+          config: Json
+          created_at: string
+          id: string
+          router_id: string
+          version: string
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          id?: string
+          router_id: string
+          version: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          id?: string
+          router_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_router_config_versions_router_id_fkey"
+            columns: ["router_id"]
+            isOneToOne: false
+            referencedRelation: "routers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      routers: {
+        Row: {
+          created_at: string
+          hash: string
+          id: string
+          name: string | null
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          hash: string
+          id?: string
+          name?: string | null
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          hash?: string
+          id?: string
+          name?: string | null
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_routers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      saved_queries: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          sql: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          sql: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          sql?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_queries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       score_attribute: {
         Row: {
@@ -2625,13 +2551,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "fk_request_id"
-            columns: ["request_id"]
-            isOneToOne: false
-            referencedRelation: "request"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "fk_score_attribute"
             columns: ["score_attribute"]
             isOneToOne: false
@@ -2684,13 +2603,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "user_api_keys_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "user_api_keys_user_id_fkey"
             columns: ["user_id"]
@@ -2755,13 +2667,6 @@ export type Database = {
           user?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "user_settings_user_fkey"
-            columns: ["user"]
-            isOneToOne: true
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "user_settings_user_fkey"
             columns: ["user"]
@@ -2849,11 +2754,15 @@ export type Database = {
       }
     }
     Views: {
-      decrypted_provider_keys: {
+      decrypted_provider_keys_v2: {
         Row: {
+          auth_type: string | null
+          byok_enabled: boolean | null
           config: Json | null
           created_at: string | null
+          cuid: string | null
           decrypted_provider_key: string | null
+          decrypted_provider_secret_key: string | null
           id: string | null
           key_id: string | null
           nonce: string | null
@@ -2861,59 +2770,11 @@ export type Database = {
           provider_key: string | null
           provider_key_name: string | null
           provider_name: string | null
+          provider_secret_key: string | null
           soft_delete: boolean | null
           vault_key_id: string | null
         }
-        Insert: {
-          config?: Json | null
-          created_at?: string | null
-          decrypted_provider_key?: never
-          id?: string | null
-          key_id?: string | null
-          nonce?: string | null
-          org_id?: string | null
-          provider_key?: string | null
-          provider_key_name?: string | null
-          provider_name?: string | null
-          soft_delete?: boolean | null
-          vault_key_id?: string | null
-        }
-        Update: {
-          config?: Json | null
-          created_at?: string | null
-          decrypted_provider_key?: never
-          id?: string | null
-          key_id?: string | null
-          nonce?: string | null
-          org_id?: string | null
-          provider_key?: string | null
-          provider_key_name?: string | null
-          provider_name?: string | null
-          soft_delete?: boolean | null
-          vault_key_id?: string | null
-        }
         Relationships: [
-          {
-            foreignKeyName: "provider_keys_key_id_fkey"
-            columns: ["key_id"]
-            isOneToOne: false
-            referencedRelation: "key"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_keys_key_id_fkey"
-            columns: ["key_id"]
-            isOneToOne: false
-            referencedRelation: "decrypted_key"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_keys_key_id_fkey"
-            columns: ["key_id"]
-            isOneToOne: false
-            referencedRelation: "valid_key"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "provider_keys_org_id_fkey"
             columns: ["org_id"]
@@ -2947,195 +2808,188 @@ export type Database = {
     }
     Functions: {
       check_request_access: {
-        Args: {
-          this_auth_hash: string
-          this_user_id: string
-        }
+        Args: { this_auth_hash: string; this_user_id: string }
         Returns: boolean
       }
       check_response_access:
         | {
-            Args: {
-              this_associated_request_id: string
-            }
+            Args: { this_associated_request_id: string; this_user_id: string }
             Returns: boolean
           }
-        | {
-            Args: {
-              this_associated_request_id: string
-              this_user_id: string
-            }
-            Returns: boolean
-          }
+        | { Args: { this_associated_request_id: string }; Returns: boolean }
       date_count:
         | {
-            Args: {
-              time_increment: string
-            }
+            Args: { prev_period: string; time_increment: string }
             Returns: Record<string, unknown>[]
           }
         | {
-            Args: {
-              time_increment: string
-              prev_period: string
-            }
+            Args: { time_increment: string }
             Returns: Record<string, unknown>[]
           }
       ensure_one_demo_org: {
-        Args: {
-          user_id: string
-        }
+        Args: { user_id: string }
         Returns: {
           organization_id: string
         }[]
       }
-      ensure_personal: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
-      get_org_id: {
-        Args: {
-          request_id: string
-        }
-        Returns: string
-      }
+      ensure_personal: { Args: never; Returns: undefined }
+      get_org_id: { Args: { request_id: string }; Returns: string }
       http: {
-        Args: {
-          request: Database["public"]["CompositeTypes"]["http_request"]
+        Args: { request: Database["public"]["CompositeTypes"]["http_request"] }
+        Returns: Database["public"]["CompositeTypes"]["http_response"]
+        SetofOptions: {
+          from: "http_request"
+          to: "http_response"
+          isOneToOne: true
+          isSetofReturn: false
         }
-        Returns: unknown
       }
       http_delete:
         | {
-            Args: {
-              uri: string
+            Args: { uri: string }
+            Returns: Database["public"]["CompositeTypes"]["http_response"]
+            SetofOptions: {
+              from: "*"
+              to: "http_response"
+              isOneToOne: true
+              isSetofReturn: false
             }
-            Returns: unknown
           }
         | {
-            Args: {
-              uri: string
-              content: string
-              content_type: string
+            Args: { content: string; content_type: string; uri: string }
+            Returns: Database["public"]["CompositeTypes"]["http_response"]
+            SetofOptions: {
+              from: "*"
+              to: "http_response"
+              isOneToOne: true
+              isSetofReturn: false
             }
-            Returns: unknown
           }
       http_get:
         | {
-            Args: {
-              uri: string
+            Args: { uri: string }
+            Returns: Database["public"]["CompositeTypes"]["http_response"]
+            SetofOptions: {
+              from: "*"
+              to: "http_response"
+              isOneToOne: true
+              isSetofReturn: false
             }
-            Returns: unknown
           }
         | {
-            Args: {
-              uri: string
-              data: Json
+            Args: { data: Json; uri: string }
+            Returns: Database["public"]["CompositeTypes"]["http_response"]
+            SetofOptions: {
+              from: "*"
+              to: "http_response"
+              isOneToOne: true
+              isSetofReturn: false
             }
-            Returns: unknown
           }
       http_head: {
-        Args: {
-          uri: string
+        Args: { uri: string }
+        Returns: Database["public"]["CompositeTypes"]["http_response"]
+        SetofOptions: {
+          from: "*"
+          to: "http_response"
+          isOneToOne: true
+          isSetofReturn: false
         }
-        Returns: unknown
       }
       http_header: {
-        Args: {
-          field: string
-          value: string
-        }
+        Args: { field: string; value: string }
         Returns: Database["public"]["CompositeTypes"]["http_header"]
+        SetofOptions: {
+          from: "*"
+          to: "http_header"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       http_list_curlopt: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           curlopt: string
           value: string
         }[]
       }
       http_patch: {
-        Args: {
-          uri: string
-          content: string
-          content_type: string
+        Args: { content: string; content_type: string; uri: string }
+        Returns: Database["public"]["CompositeTypes"]["http_response"]
+        SetofOptions: {
+          from: "*"
+          to: "http_response"
+          isOneToOne: true
+          isSetofReturn: false
         }
-        Returns: unknown
       }
       http_post:
         | {
-            Args: {
-              uri: string
-              content: string
-              content_type: string
+            Args: { content: string; content_type: string; uri: string }
+            Returns: Database["public"]["CompositeTypes"]["http_response"]
+            SetofOptions: {
+              from: "*"
+              to: "http_response"
+              isOneToOne: true
+              isSetofReturn: false
             }
-            Returns: unknown
           }
         | {
-            Args: {
-              uri: string
-              data: Json
+            Args: { data: Json; uri: string }
+            Returns: Database["public"]["CompositeTypes"]["http_response"]
+            SetofOptions: {
+              from: "*"
+              to: "http_response"
+              isOneToOne: true
+              isSetofReturn: false
             }
-            Returns: unknown
           }
       http_put: {
-        Args: {
-          uri: string
-          content: string
-          content_type: string
+        Args: { content: string; content_type: string; uri: string }
+        Returns: Database["public"]["CompositeTypes"]["http_response"]
+        SetofOptions: {
+          from: "*"
+          to: "http_response"
+          isOneToOne: true
+          isSetofReturn: false
         }
-        Returns: unknown
       }
-      http_reset_curlopt: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
+      http_reset_curlopt: { Args: never; Returns: boolean }
       http_set_curlopt: {
-        Args: {
-          curlopt: string
-          value: string
-        }
+        Args: { curlopt: string; value: string }
         Returns: boolean
       }
       insert_feedback_and_update_response: {
         Args: {
-          response_id: string
-          feedback_metric_id: number
           boolean_value: boolean
-          numerical_value: number
-          string_value: string
           categorical_value: string
           created_by: string
+          feedback_metric_id: number
           name: string
+          numerical_value: number
+          response_id: string
+          string_value: string
         }
         Returns: number
       }
-      urlencode:
-        | {
-            Args: {
-              data: Json
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              string: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              string: string
-            }
-            Returns: string
-          }
-      verify_helicone_proxy_key: {
-        Args: {
-          api_key: string
-          stored_hashed_key: string
-        }
-        Returns: boolean
+      try_det_decrypt_utf8: {
+        Args: { aad: string; ct: string; key_id: string; nonce: string }
+        Returns: string
       }
+      urlencode:
+        | { Args: { data: Json }; Returns: string }
+        | {
+            Args: { string: string }
+            Returns: {
+              error: true
+            } & "Could not choose the best candidate function between: public.urlencode(string => bytea), public.urlencode(string => varchar). Try renaming the parameters or the function itself in the database so function overloading can be resolved"
+          }
+        | {
+            Args: { string: string }
+            Returns: {
+              error: true
+            } & "Could not choose the best candidate function between: public.urlencode(string => bytea), public.urlencode(string => varchar). Try renaming the parameters or the function itself in the database so function overloading can be resolved"
+          }
     }
     Enums: {
       mapper_status:
@@ -3150,226 +3004,53 @@ export type Database = {
     }
     CompositeTypes: {
       http_header: {
-        field: string
-        value: string
+        field: string | null
+        value: string | null
       }
       http_request: {
         method: unknown
-        uri: string
-        headers: unknown
-        content_type: string
-        content: string
+        uri: string | null
+        headers: Database["public"]["CompositeTypes"]["http_header"][] | null
+        content_type: string | null
+        content: string | null
       }
       http_response: {
-        status: number
-        content_type: string
-        headers: unknown
-        content: string
+        status: number | null
+        content_type: string | null
+        headers: Database["public"]["CompositeTypes"]["http_header"][] | null
+        content: string | null
       }
-    }
-  }
-  storage: {
-    Tables: {
-      buckets: {
-        Row: {
-          allowed_mime_types: string[] | null
-          avif_autodetection: boolean | null
-          created_at: string | null
-          file_size_limit: number | null
-          id: string
-          name: string
-          owner: string | null
-          owner_id: string | null
-          public: boolean | null
-          updated_at: string | null
-        }
-        Insert: {
-          allowed_mime_types?: string[] | null
-          avif_autodetection?: boolean | null
-          created_at?: string | null
-          file_size_limit?: number | null
-          id: string
-          name: string
-          owner?: string | null
-          owner_id?: string | null
-          public?: boolean | null
-          updated_at?: string | null
-        }
-        Update: {
-          allowed_mime_types?: string[] | null
-          avif_autodetection?: boolean | null
-          created_at?: string | null
-          file_size_limit?: number | null
-          id?: string
-          name?: string
-          owner?: string | null
-          owner_id?: string | null
-          public?: boolean | null
-          updated_at?: string | null
-        }
-        Relationships: []
-      }
-      migrations: {
-        Row: {
-          executed_at: string | null
-          hash: string
-          id: number
-          name: string
-        }
-        Insert: {
-          executed_at?: string | null
-          hash: string
-          id: number
-          name: string
-        }
-        Update: {
-          executed_at?: string | null
-          hash?: string
-          id?: number
-          name?: string
-        }
-        Relationships: []
-      }
-      objects: {
-        Row: {
-          bucket_id: string | null
-          created_at: string | null
-          id: string
-          last_accessed_at: string | null
-          metadata: Json | null
-          name: string | null
-          owner: string | null
-          owner_id: string | null
-          path_tokens: string[] | null
-          updated_at: string | null
-          version: string | null
-        }
-        Insert: {
-          bucket_id?: string | null
-          created_at?: string | null
-          id?: string
-          last_accessed_at?: string | null
-          metadata?: Json | null
-          name?: string | null
-          owner?: string | null
-          owner_id?: string | null
-          path_tokens?: string[] | null
-          updated_at?: string | null
-          version?: string | null
-        }
-        Update: {
-          bucket_id?: string | null
-          created_at?: string | null
-          id?: string
-          last_accessed_at?: string | null
-          metadata?: Json | null
-          name?: string | null
-          owner?: string | null
-          owner_id?: string | null
-          path_tokens?: string[] | null
-          updated_at?: string | null
-          version?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "objects_bucketId_fkey"
-            columns: ["bucket_id"]
-            isOneToOne: false
-            referencedRelation: "buckets"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      can_insert_object: {
-        Args: {
-          bucketid: string
-          name: string
-          owner: string
-          metadata: Json
-        }
-        Returns: undefined
-      }
-      extension: {
-        Args: {
-          name: string
-        }
-        Returns: string
-      }
-      filename: {
-        Args: {
-          name: string
-        }
-        Returns: string
-      }
-      foldername: {
-        Args: {
-          name: string
-        }
-        Returns: unknown
-      }
-      get_size_by_bucket: {
-        Args: Record<PropertyKey, never>
-        Returns: {
-          size: number
-          bucket_id: string
-        }[]
-      }
-      search: {
-        Args: {
-          prefix: string
-          bucketname: string
-          limits?: number
-          levels?: number
-          offsets?: number
-          search?: string
-          sortcolumn?: string
-          sortorder?: string
-        }
-        Returns: {
-          name: string
-          id: string
-          updated_at: string
-          created_at: string
-          last_accessed_at: string
-          metadata: Json
-        }[]
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
     }
   }
 }
 
-type PublicSchema = Database[Extract<keyof Database, "public">]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-        Database[PublicTableNameOrOptions["schema"]]["Views"])
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
-        PublicSchema["Views"])
-    ? (PublicSchema["Tables"] &
-        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -3377,20 +3058,24 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -3398,20 +3083,24 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -3419,15 +3108,53 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
-    | keyof PublicSchema["Enums"]
-    | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
-    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      mapper_status: [
+        "PENDING_CREATION",
+        "PENDING_UPDATE",
+        "IN_PROGRESS",
+        "PENDING_APPROVAL",
+        "ACTIVE",
+        "INACTIVE",
+        "DECLINED",
+        "FAILED",
+      ],
+    },
+  },
+} as const
 

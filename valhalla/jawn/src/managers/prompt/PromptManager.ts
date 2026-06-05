@@ -13,13 +13,918 @@ import {
   PromptsQueryParams,
   PromptsResult,
 } from "../../controllers/public/promptController";
+import {
+  PromptCreateResponse,
+  PromptVersionCounts,
+} from "../../controllers/public/prompt2025Controller";
+import { Prompt2025, Prompt2025Version } from "@helicone-package/prompts/types";
 import { dbExecute } from "../../lib/shared/db/dbExecute";
-import { FilterNode } from "../../lib/shared/filters/filterDefs";
+import { HELICONE_DB } from "../../lib/shared/db/pgpClient";
+import { FilterNode } from "@helicone-package/filters/filterDefs";
 import { buildFilterPostgres } from "@helicone-package/filters/filters";
 import { Result, err, ok, resultMap } from "../../packages/common/result";
 import { BaseManager } from "../BaseManager";
 import { RequestManager } from "../request/RequestManager";
 
+import { S3Client } from "../../lib/shared/db/s3Client";
+import type { OpenAIChatRequest } from "@helicone-package/llm-mapper/mappers/openai/chat-v2";
+import { AuthParams } from "../../packages/common/auth/types";
+import { Prompt2025Input } from "../../lib/db/ClickhouseWrapper";
+import { resetPromptCache as invalidatePromptCache } from "../../lib/resetPromptCache";
+
+
+const PROMPT_ID_LENGTH = 6;
+const MAX_PROMPT_ID_GENERATION_ATTEMPTS = 3;
+const PRODUCTION_ENVIRONMENT = 'production';
+
+export class Prompt2025Manager extends BaseManager {
+  private s3Client: S3Client;
+
+  constructor(authParams: AuthParams) {
+    super(authParams);
+    this.s3Client = new S3Client(
+      process.env.S3_ACCESS_KEY || undefined,
+      process.env.S3_SECRET_KEY || undefined,
+      process.env.S3_ENDPOINT_PUBLIC ?? process.env.S3_ENDPOINT ?? "",
+      process.env.S3_PROMPT_BUCKET_NAME ?? "",
+      (process.env.S3_REGION as "us-west-2" | "eu-west-1") ?? "us-west-2"
+    );
+  }
+
+  private async resetPromptCache(params: {
+    promptId: string;
+    versionId?: string;
+    environment?: string;
+  }): Promise<void> {
+    try {
+      await invalidatePromptCache({
+        orgId: this.authParams.organizationId,
+        ...params,
+      });
+    } catch (error) {
+      console.error("Error resetting prompt cache:", error);
+    }
+  }
+
+  private generateRandomPromptId(): string {
+    const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let result = '';
+    for (let i = 0; i < PROMPT_ID_LENGTH; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+
+  async totalPrompts(): Promise<Result<number, string>> {
+    const result = await dbExecute<{ count: number }>(
+      `SELECT COUNT(*) as count FROM prompts_2025 WHERE organization = $1 AND soft_delete is false`,
+      [this.authParams.organizationId]
+    );
+    if (result.error) {
+      return err(result.error);
+    }
+    return ok(Number(result.data?.[0]?.count ?? 0));
+  }
+
+  async getPromptEnvironments(): Promise<Result<string[], string>> {
+    const result = await dbExecute<{ environment: string }>(
+      `SELECT DISTINCT unnest(environments) as environment
+       FROM prompts_2025_versions
+       WHERE organization = $1 AND soft_delete = false AND environments IS NOT NULL
+       ORDER BY environment`,
+      [this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    const environments = result.data?.map(row => row.environment) || [];
+    return ok(environments);
+  }
+
+
+  async getPromptTags(): Promise<Result<string[], string>> {
+    const result = await dbExecute<{ tags: string }>(
+      `SELECT DISTINCT UNNEST(tags) as tags FROM prompts_2025 WHERE organization = $1 AND soft_delete is false`,
+      [this.authParams.organizationId]
+    );
+    if (result.error) {
+      return err(result.error);
+    }
+    return ok(result.data?.map((tag: { tags: string }) => tag.tags) ?? []);
+  }
+
+  async getPrompt(promptId: string): Promise<Result<Prompt2025, string>> {
+    const result = await dbExecute<Prompt2025>(
+      `SELECT
+        id,
+        name,
+        tags,
+        created_at
+      FROM prompts_2025
+      WHERE id = $1 AND organization = $2 AND soft_delete is false
+      LIMIT 1
+      `,
+      [promptId, this.authParams.organizationId]
+    );
+    if (result.error) {
+      return err(result.error);
+    }
+    if (!result.data?.[0]) {
+      return err("Prompt not found");
+    }
+    return ok(result.data[0]);
+  }
+
+  async renamePrompt(params: {
+    promptId: string;
+    name: string;
+  }): Promise<Result<null, string>> {
+    const result = await dbExecute<null>(
+      `UPDATE prompts_2025 SET name = $1 WHERE id = $2 AND organization = $3 AND soft_delete is false`,
+      [params.name, params.promptId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    return ok(null);
+  }
+
+  async updatePromptTags(params: {
+    promptId: string;
+    tags: string[];
+  }): Promise<Result<string[], string>> {
+    const sanitizedTags = Array.from(
+      new Set(
+        (params.tags ?? [])
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0)
+      )
+    );
+
+    const result = await dbExecute<{ tags: string[] }>(
+      `UPDATE prompts_2025 
+       SET tags = $1 
+       WHERE id = $2 AND organization = $3 AND soft_delete is false
+       RETURNING tags`,
+      [sanitizedTags, params.promptId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    if (!result.data?.[0]) {
+      return err("Prompt not found");
+    }
+
+    return ok(result.data[0].tags ?? []);
+  }
+
+  async getPrompts(params: {
+    search: string;
+    tagsFilter: string[];
+    page: number;
+    pageSize: number;
+  }): Promise<Result<Prompt2025[], string>> {
+    const tagsFilterClause = params.tagsFilter.length > 0 ? `AND tags && $3::text[]` : "";
+    const result = await dbExecute<Prompt2025>(
+      `
+      SELECT
+        id,
+        name,
+        tags,
+        created_at
+      FROM prompts_2025
+      WHERE name ILIKE $1 AND organization = $2 AND soft_delete is false
+      ${tagsFilterClause}
+      ORDER BY created_at DESC
+      LIMIT $4 OFFSET $5
+    `,
+      [
+        `%${params.search}%`,
+        this.authParams.organizationId,
+        params.tagsFilter,
+        params.pageSize,
+        params.page * params.pageSize
+      ]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    return ok(result.data ?? []);
+  }
+
+  async getPromptInputs(params: {
+    promptId: string;
+    versionId: string;
+    requestId: string;
+  }): Promise<Result<Prompt2025Input | null, string>> {
+    const existsResult = await dbExecute<{ exists: boolean }>(
+      `SELECT EXISTS (
+        SELECT 1 FROM prompts_2025_versions 
+        WHERE prompt_id = $1 AND id = $2 AND organization = $3 AND soft_delete is false
+      )`,
+      [params.promptId, params.versionId, this.authParams.organizationId]
+    );
+
+    if (existsResult.error) {
+      return err(existsResult.error);
+    }
+
+    if (!existsResult.data?.[0]?.exists) {
+      return err("Prompt version not found");
+    }
+
+    const result = await dbExecute<Prompt2025Input>(
+      `SELECT 
+        request_id,
+        version_id,
+        inputs,
+        environment
+      FROM prompts_2025_inputs
+      WHERE version_id = $1 AND request_id = $2
+      LIMIT 1
+      `,
+      [params.versionId, params.requestId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    return ok(result.data?.[0] ?? null);
+  }
+
+
+  async getPromptVersionCounts(params: {
+    promptId: string;
+  }): Promise<Result<PromptVersionCounts, string>> {
+    const result = await dbExecute<{ total_versions: number, major_versions: number }>(
+      `SELECT
+        COUNT(*)::integer as total_versions,
+        MAX(major_version) as major_versions
+      FROM prompts_2025_versions
+      WHERE prompt_id = $1 AND organization = $2 AND soft_delete is false
+      `,
+      [params.promptId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    return ok({
+      totalVersions: result.data?.[0]?.total_versions ?? 0,
+      majorVersions: result.data?.[0]?.major_versions ?? 0,
+    });
+  }
+
+  async getPromptProductionVersion(params: {
+    promptId: string;
+    includePromptBody?: boolean;
+  }): Promise<Result<Prompt2025Version, string>> {
+    const result = await dbExecute<Prompt2025Version>(
+      `
+      SELECT
+        versions.id,
+        versions.prompt_id,
+        versions.major_version,
+        versions.minor_version,
+        versions.commit_message,
+        versions.created_at,
+        versions.model,
+        versions.environments
+      FROM prompts_2025 AS prompts
+      INNER JOIN prompts_2025_versions AS versions
+      ON prompts.production_version = versions.id
+      WHERE prompts.id = $1 AND prompts.organization = $2 AND prompts.soft_delete is false AND versions.soft_delete is false
+      `,
+      [params.promptId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    if (!result.data?.[0]) {
+      return err("Prompt production version not found");
+    }
+
+    const promptVersion = result.data[0];
+
+    const s3UrlResult = await this.getPromptVersionS3Url(promptVersion.prompt_id, promptVersion.id);
+    if (s3UrlResult.error) {
+      return err(s3UrlResult.error);
+    }
+    promptVersion.s3_url = s3UrlResult.data ?? undefined;
+
+    // Optionally fetch and include the full prompt body
+    if (params.includePromptBody) {
+      const promptBodyResult = await this.s3Client.getPromptBody(
+        promptVersion.prompt_id,
+        promptVersion.id,
+        this.authParams.organizationId
+      );
+      if (promptBodyResult.error) {
+        return err(promptBodyResult.error);
+      }
+      promptVersion.prompt_body = promptBodyResult.data as Prompt2025Version['prompt_body'];
+    }
+
+    return ok(promptVersion);
+  }
+
+  async getPromptVersions(params: {
+    promptId: string;
+    majorVersion?: number;
+  }): Promise<Result<Prompt2025Version[], string>> {
+    const result = await dbExecute<Prompt2025Version>(
+      `
+      SELECT
+        id,
+        prompt_id,
+        major_version,
+        minor_version,
+        commit_message,
+        created_at,
+        model,
+        environments
+      FROM prompts_2025_versions
+      WHERE prompt_id = $1
+      AND organization = $2 AND soft_delete is false
+      ${params.majorVersion !== undefined ? `AND major_version = $3` : ''}
+      ORDER BY created_at DESC
+      LIMIT 50
+      `,
+      [params.promptId, this.authParams.organizationId, params.majorVersion]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    return ok(result.data ?? []);
+  }
+
+  async getPromptVersionWithBodyByEnvironment(params: {
+    promptId: string;
+    environment: string;
+    includePromptBody?: boolean;
+  }): Promise<Result<Prompt2025Version, string>> {
+    const result = await dbExecute<Prompt2025Version>(
+      `
+      SELECT
+        id,
+        prompt_id,
+        major_version,
+        minor_version,
+        commit_message,
+        created_at,
+        model,
+        environments
+      FROM prompts_2025_versions
+      WHERE prompt_id = $1 AND environments @> ARRAY[$2]::text[] AND organization = $3 AND soft_delete is false
+      LIMIT 1
+      `,
+      [params.promptId, params.environment, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    if (!result.data?.[0]) {
+      return err("Prompt version not found");
+    }
+
+    const promptVersion = result.data[0];
+
+    const s3UrlResult = await this.getPromptVersionS3Url(promptVersion.prompt_id, promptVersion.id);
+    if (s3UrlResult.error) {
+      return err(s3UrlResult.error);
+    }
+    promptVersion.s3_url = s3UrlResult.data ?? undefined;
+
+    // Optionally fetch and include the full prompt body
+    if (params.includePromptBody) {
+      const promptBodyResult = await this.s3Client.getPromptBody(
+        promptVersion.prompt_id,
+        promptVersion.id,
+        this.authParams.organizationId
+      );
+      if (promptBodyResult.error) {
+        return err(promptBodyResult.error);
+      }
+      promptVersion.prompt_body = promptBodyResult.data as Prompt2025Version['prompt_body'];
+    }
+
+    return ok(promptVersion);
+  }
+
+  async getPromptVersionWithBody(params: {
+    promptVersionId: string;
+    includePromptBody?: boolean;
+  }): Promise<Result<Prompt2025Version, string>> {
+    const result = await dbExecute<Prompt2025Version>(
+      `
+      SELECT
+        id,
+        prompt_id,
+        major_version,
+        minor_version,
+        commit_message,
+        created_at,
+        model,
+        environments
+      FROM prompts_2025_versions
+      WHERE id = $1
+      AND organization = $2 AND soft_delete is false
+      LIMIT 1
+      `,
+      [params.promptVersionId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    if (!result.data?.[0]) {
+      return err("Prompt version not found");
+    }
+
+    const promptVersion = result.data[0];
+
+    const s3UrlResult = await this.getPromptVersionS3Url(promptVersion.prompt_id, promptVersion.id);
+    if (s3UrlResult.error) {
+      return err(s3UrlResult.error);
+    }
+    promptVersion.s3_url = s3UrlResult.data ?? undefined;
+
+    // Optionally fetch and include the full prompt body
+    if (params.includePromptBody) {
+      const promptBodyResult = await this.s3Client.getPromptBody(
+        promptVersion.prompt_id,
+        promptVersion.id,
+        this.authParams.organizationId
+      );
+      if (promptBodyResult.error) {
+        return err(promptBodyResult.error);
+      }
+      promptVersion.prompt_body = promptBodyResult.data as Prompt2025Version['prompt_body'];
+    }
+
+    return ok(promptVersion);
+  }
+
+  async getPromptBody(params: {
+    promptVersionId: string;
+  }): Promise<Result<Prompt2025Version['prompt_body'], string>> {
+    // First verify the version exists and belongs to this org
+    const result = await dbExecute<{ id: string; prompt_id: string }>(
+      `
+      SELECT id, prompt_id
+      FROM prompts_2025_versions
+      WHERE id = $1
+      AND organization = $2 AND soft_delete is false
+      LIMIT 1
+      `,
+      [params.promptVersionId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    if (!result.data?.[0]) {
+      return err("Prompt version not found");
+    }
+
+    const { id, prompt_id } = result.data[0];
+
+    const promptBodyResult = await this.s3Client.getPromptBody(
+      prompt_id,
+      id,
+      this.authParams.organizationId
+    );
+
+    if (promptBodyResult.error) {
+      return err(promptBodyResult.error);
+    }
+
+    return ok(promptBodyResult.data as Prompt2025Version['prompt_body']);
+  }
+
+  async createPrompt(params: {
+    name: string,
+    tags: string[],
+    promptBody: OpenAIChatRequest,
+  }): Promise<Result<PromptCreateResponse, string>> {
+    // Create prompt
+    let attempts = 0;
+    let insertPromptResult = null;
+
+    while (attempts < MAX_PROMPT_ID_GENERATION_ATTEMPTS) {
+      const promptId = this.generateRandomPromptId();
+      try {
+        insertPromptResult = await dbExecute<{ id: string }>(
+          `
+        INSERT INTO prompts_2025 (id, name, tags, created_at, organization)
+        VALUES ($1, $2, $3, NOW(), $4)
+        RETURNING id
+          `, [
+          promptId,
+          params.name,
+          params.tags,
+          this.authParams.organizationId,
+        ]
+        );
+        break;
+      } catch (error: any) {
+        if (error.code === '23505') {
+          attempts++;
+          continue;
+        }
+        return err(error);
+      }
+    }
+
+    if (insertPromptResult?.error) {
+      return err(insertPromptResult.error);
+    }
+
+    const promptId = insertPromptResult?.data?.[0]?.id ?? '';
+
+
+    const insertPromptVersionResult = await dbExecute<{ id: string }>(
+      `
+      INSERT INTO prompts_2025_versions (
+        created_at,
+        prompt_id,
+        major_version,
+        minor_version,
+        commit_message,
+        created_by,
+        organization,
+        model
+      )
+      VALUES (NOW(), $1, 0, 0, 'First version.', $2, $3, $4)
+      RETURNING id
+      `, [
+      promptId,
+      this.authParams.userId,
+      this.authParams.organizationId,
+      params.promptBody.model,
+    ]
+    )
+
+    if (insertPromptVersionResult?.error) {
+      return err(insertPromptVersionResult.error);
+    }
+
+    const promptVersionId = insertPromptVersionResult?.data?.[0]?.id ?? '';
+
+    const updateProductionVersionResult = await this.setPromptVersionEnvironment({
+      promptId,
+      promptVersionId,
+      environment: PRODUCTION_ENVIRONMENT,
+    });
+    if (updateProductionVersionResult?.error) {
+      return err(updateProductionVersionResult.error);
+    }
+
+    const s3Result = await this.storePromptBody(promptId, promptVersionId, params.promptBody);
+    if (s3Result.error) {
+      return err(s3Result.error);
+    }
+
+    return ok({ id: promptId, versionId: promptVersionId });
+  }
+
+  async newPromptVersion(params: {
+    promptId: string;
+    promptVersionId: string;
+    newMajorVersion: boolean;
+    environment?: string;
+    commitMessage: string;
+    promptBody: OpenAIChatRequest;
+  }): Promise<Result<{ id: string }, string>> {
+    const currentVersionInfo = await dbExecute<{
+      major_version: number;
+      minor_version: number;
+      prompt_id: string;
+    }>(
+      `SELECT major_version, minor_version, prompt_id 
+      FROM prompts_2025_versions 
+      WHERE id = $1 AND organization = $2 AND soft_delete is false`,
+      [params.promptVersionId, this.authParams.organizationId]
+    );
+
+    if (currentVersionInfo.error || !currentVersionInfo.data?.[0]) {
+      return err(currentVersionInfo.error || "Current version not found");
+    }
+
+    const current = currentVersionInfo.data[0];
+    let nextMajor: number;
+    let nextMinor: number;
+
+    if (params.newMajorVersion) {
+      const maxMajorResult = await dbExecute<{ next_major: number }>(
+        `SELECT COALESCE(MAX(major_version), 0) + 1 as next_major 
+        FROM prompts_2025_versions 
+        WHERE prompt_id = $1 AND organization = $2 AND soft_delete is false`,
+        [params.promptId, this.authParams.organizationId]
+      );
+
+      if (maxMajorResult.error || !maxMajorResult.data?.[0]) {
+        return err(maxMajorResult.error || "Failed to calculate next major version");
+      }
+
+      nextMajor = maxMajorResult.data[0].next_major;
+      nextMinor = 0;
+    } else {
+      const maxMinorResult = await dbExecute<{ next_minor: number }>(
+        `SELECT COALESCE(MAX(minor_version), 0) + 1 as next_minor 
+        FROM prompts_2025_versions 
+        WHERE prompt_id = $1 AND major_version = $2 AND organization = $3 AND soft_delete is false`,
+        [params.promptId, current.major_version, this.authParams.organizationId]
+      );
+
+      if (maxMinorResult.error || !maxMinorResult.data?.[0]) {
+        return err(maxMinorResult.error || "Failed to calculate next minor version");
+      }
+
+      nextMajor = current.major_version;
+      nextMinor = maxMinorResult.data[0].next_minor;
+    }
+
+    const insertPromptVersionResult = await dbExecute<{ id: string }>(
+      `
+      INSERT INTO prompts_2025_versions (
+        created_at,
+        prompt_id,
+        major_version,
+        minor_version,
+        commit_message,
+        created_by,
+        organization,
+        model
+      )
+      VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+      `, [
+      params.promptId,
+      nextMajor,
+      nextMinor,
+      params.commitMessage,
+      this.authParams.userId,
+      this.authParams.organizationId,
+      params.promptBody.model,
+    ]
+    )
+
+    if (insertPromptVersionResult?.error) {
+      return err(insertPromptVersionResult.error);
+    }
+
+    const promptVersionId = insertPromptVersionResult?.data?.[0]?.id ?? '';
+
+    if (params.environment) {
+      const updateEnvironmentVersionResult = await this.setPromptVersionEnvironment({
+        promptId: params.promptId,
+        promptVersionId,
+        environment: params.environment,
+      });
+      if (updateEnvironmentVersionResult?.error) {
+        return err(updateEnvironmentVersionResult.error);
+      }
+    }
+
+    const s3Result = await this.storePromptBody(params.promptId, promptVersionId, params.promptBody);
+    if (s3Result.error) {
+      return err(s3Result.error);
+    }
+
+    return ok({ id: promptVersionId });
+  }
+
+  async setPromptVersionEnvironment(params: {
+    promptId: string;
+    promptVersionId: string;
+    environment: string;
+  }): Promise<Result<null, string>> {
+    try {
+      await HELICONE_DB.tx(async (t) => {
+        // Check version exists and belongs to this prompt/org
+        const versionCheck = await t.oneOrNone<{ id: string }>(
+          `SELECT id FROM prompts_2025_versions
+           WHERE id = $1 AND prompt_id = $2 AND organization = $3 AND soft_delete = false`,
+          [params.promptVersionId, params.promptId, this.authParams.organizationId]
+        );
+
+        if (!versionCheck) {
+          throw new Error("Prompt version not found or does not belong to the specified prompt");
+        }
+
+        // Update production version ref
+        if (params.environment === PRODUCTION_ENVIRONMENT) {
+          await t.none(
+            `UPDATE prompts_2025 SET production_version = $1 WHERE id = $2 AND organization = $3 AND soft_delete = false`,
+            [params.promptVersionId, params.promptId, this.authParams.organizationId]
+          );
+        }
+
+        // Remove this environment from all other versions of this prompt
+        await t.none(
+          `UPDATE prompts_2025_versions
+           SET environments = array_remove(COALESCE(environments, ARRAY[]::text[]), $3)
+           WHERE prompt_id = $1 AND organization = $2 AND soft_delete = false`,
+          [params.promptId, this.authParams.organizationId, params.environment]
+        );
+
+        // Add the environment to the target version
+        await t.none(
+          `UPDATE prompts_2025_versions
+           SET environments = array_append(COALESCE(environments, ARRAY[]::text[]), $3)
+           WHERE id = $4 AND prompt_id = $1 AND organization = $2 AND soft_delete = false
+           AND NOT (COALESCE(environments, ARRAY[]::text[]) @> ARRAY[$3]::text[])`,
+          [params.promptId, this.authParams.organizationId, params.environment, params.promptVersionId]
+        );
+      });
+
+      await this.resetPromptCache({
+        promptId: params.promptId,
+        environment: params.environment,
+      });
+
+      return ok(null);
+    } catch (error: any) {
+      return err(error.message || "Failed to set environment on version");
+    }
+  }
+
+  async removeEnvironmentFromVersion(params: {
+    promptId: string;
+    promptVersionId: string;
+    environment: string;
+  }): Promise<Result<null, string>> {
+    // Prevent removing production environment - it can only be moved to another version
+    if (params.environment === PRODUCTION_ENVIRONMENT) {
+      return err("Cannot remove production environment. Use 'Set as Production' on another version to move it.");
+    }
+
+    try {
+      await HELICONE_DB.tx(async (t) => {
+        // Check version exists
+        const versionCheck = await t.oneOrNone<{ id: string }>(
+          `SELECT id FROM prompts_2025_versions
+           WHERE id = $1 AND prompt_id = $2 AND organization = $3 AND soft_delete = false`,
+          [params.promptVersionId, params.promptId, this.authParams.organizationId]
+        );
+
+        if (!versionCheck) {
+          throw new Error("Prompt version not found or does not belong to the specified prompt");
+        }
+
+        // Remove environment from array
+        await t.none(
+          `UPDATE prompts_2025_versions
+           SET environments = array_remove(COALESCE(environments, ARRAY[]::text[]), $3)
+           WHERE id = $4 AND prompt_id = $1 AND organization = $2 AND soft_delete = false`,
+          [params.promptId, this.authParams.organizationId, params.environment, params.promptVersionId]
+        );
+      });
+
+      await this.resetPromptCache({
+        promptId: params.promptId,
+        environment: params.environment,
+      });
+
+      return ok(null);
+    } catch (error: any) {
+      return err(error.message || "Failed to remove environment from version");
+    }
+  }
+
+  async deletePrompt(params: {
+    promptId: string;
+  }): Promise<Result<null, string>> {
+    const versionsResult = await dbExecute<{ id: string }>(
+      `SELECT id FROM prompts_2025_versions WHERE prompt_id = $1 AND organization = $2 AND soft_delete is false`,
+      [params.promptId, this.authParams.organizationId]
+    );
+
+    if (versionsResult.error) {
+      return err(versionsResult.error);
+    }
+
+    const versionIds = versionsResult.data || [];
+    for (const version of versionIds) {
+      const s3Result = await this.deletePromptBody(params.promptId, version.id);
+      if (s3Result.error) {
+        console.error(`Failed to delete S3 object for version ${version.id}:`, s3Result.error);
+        // continue with other deletions even if one fails
+      }
+    }
+
+    // this will happen on cascade anyways when we delete the source prompt.
+    const versionResult = await dbExecute<null>(
+      `UPDATE prompts_2025_versions SET soft_delete = true WHERE prompt_id = $1 AND organization = $2`,
+      [params.promptId, this.authParams.organizationId]
+    );
+
+    if (versionResult.error) {
+      return err(versionResult.error);
+    }
+
+    const result = await dbExecute<null>(
+      `UPDATE prompts_2025 SET soft_delete = true WHERE id = $1 AND organization = $2`,
+      [params.promptId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    // remove prod cache
+    await this.resetPromptCache({
+      promptId: params.promptId,
+    });
+
+    return ok(null);
+  }
+
+  async deletePromptVersion(params: {
+    promptId: string;
+    promptVersionId: string;
+  }): Promise<Result<null, string>> {
+    const result = await dbExecute<null>(
+      `UPDATE prompts_2025_versions SET soft_delete = true WHERE id = $1 AND organization = $2`,
+      [params.promptVersionId, this.authParams.organizationId]
+    );
+
+    if (result.error) {
+      return err(result.error);
+    }
+
+    const s3Result = await this.deletePromptBody(params.promptId, params.promptVersionId);
+    if (s3Result.error) {
+      return err(s3Result.error);
+    }
+
+    await this.resetPromptCache({
+      promptId: params.promptId,
+      versionId: params.promptVersionId
+    });
+
+    return ok(null);
+  }
+
+  // Unsure about typing of the data, should double check this when writing using code.
+  // Unsure if we use every field in CompletionCreateParams.
+  private async storePromptBody(
+    promptId: string,
+    promptVersionId: string,
+    promptBody: OpenAIChatRequest
+  ): Promise<Result<null, string>> {
+    if (!promptId) return err("Prompt ID is required");
+    const key = this.s3Client.getPromptKey(promptId, promptVersionId, this.authParams.organizationId);
+
+    const s3result = await this.s3Client.store(key, JSON.stringify(promptBody));
+    if (s3result.error) return err(s3result.error);
+
+    return ok(null);
+  }
+
+  private async deletePromptBody(
+    promptId: string,
+    promptVersionId: string
+  ): Promise<Result<null, string>> {
+    const key = this.s3Client.getPromptKey(promptId, promptVersionId, this.authParams.organizationId);
+
+    const s3Result = await this.s3Client.remove(key);
+    if (s3Result.error) return err(s3Result.error);
+    return ok(null);
+  }
+
+  private async getPromptVersionS3Url(promptId: string, promptVersionId: string): Promise<Result<string, string>> {
+    const key = this.s3Client.getPromptKey(promptId, promptVersionId, this.authParams.organizationId);
+    const s3Result = await this.s3Client.getSignedUrl(key);
+    if (s3Result.error) return err(s3Result.error);
+    return ok(s3Result.data ?? '');
+  }
+
+  // TODO: add other methods for deletion, etc.
+  // TODO: Add query methods for getting prompts and metrics from Postgres, Clickhouse.
+}
+
+// DEPRECATED
+// TODO: Remove this once Prompt2025Manager and new prompt system is live
 export class PromptManager extends BaseManager {
   async getOrCreatePromptVersionFromRequest(
     requestId: string
@@ -456,14 +1361,13 @@ export class PromptManager extends BaseManager {
     AND prompt_v2.soft_delete = false
     AND prompts_versions.soft_delete = false
     AND (${filterWithAuth.filter})
-    ${
-      includeExperimentVersions
+    ${includeExperimentVersions
         ? ""
         : `AND (
               prompts_versions.metadata->>'experimentAssigned' IS NULL
               OR prompts_versions.metadata->>'experimentAssigned' != 'true'
             )`
-    }
+      }
     `,
       filterWithAuth.argsAcc
     );
@@ -876,13 +1780,13 @@ export class PromptManager extends BaseManager {
         const matches = str.match(regex);
         return matches
           ? matches.map((match) =>
-              match
-                .replace(
-                  /<helicone-prompt-input key=\\?"(.*?)\\?"\s*\/>/g,
-                  "$1"
-                )
-                .replace(/\\/g, "")
-            )
+            match
+              .replace(
+                /<helicone-prompt-input key=\\?"(.*?)\\?"\s*\/>/g,
+                "$1"
+              )
+              .replace(/\\/g, "")
+          )
           : [];
       };
 

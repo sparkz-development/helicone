@@ -101,9 +101,19 @@ describe("mapGeminiPro", () => {
     // Test request message handling
     expect(result.schema.request.messages![0]).toEqual({
       role: "user",
-      content: "What's in this image?",
-      _type: "image",
-      image_url: imageData,
+      _type: "contentArray",
+      contentArray: [
+        {
+          _type: "message",
+          content: "What's in this image?",
+          role: "user",
+        },
+        {
+          _type: "image",
+          image_url: `data:image/png;base64,${imageData}`,
+          role: "user",
+        },
+      ],
     });
 
     // Test response message handling
@@ -289,6 +299,56 @@ describe("mapAnthropicRequest", () => {
       content: "I see two pages",
       _type: "message",
       id: expect.any(String),
+    });
+  });
+
+  it("should handle images with base64 source data and include mime_type", () => {
+    const result = mapAnthropicRequest({
+      request: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "What's in this image?",
+              },
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/jpeg",
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                },
+              },
+            ],
+          },
+        ],
+      },
+      response: {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "I see an image",
+          },
+        ],
+      },
+      statusCode: 200,
+      model: "claude-3-sonnet",
+    });
+
+    const contentArray = result.schema.request.messages![0].contentArray!;
+    expect(contentArray).toHaveLength(2);
+
+    // Image with base64 source should include mime_type
+    expect(contentArray[1]).toMatchObject({
+      role: "user",
+      _type: "image",
+      content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      mime_type: "image/jpeg",
+      image_url: "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
     });
   });
 

@@ -3,10 +3,11 @@ import useNotification from "@/components/shared/notification/useNotification";
 import { getJawnClient } from "@/lib/clients/jawn";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Evaluator } from "./types";
+import { logger } from "@/lib/telemetry/logger";
 
 export function useEvaluatorDetails(
   evaluator: Evaluator,
-  onSuccess: () => void
+  onSuccess: () => void,
 ) {
   const org = useOrg();
   const { setNotification } = useNotification();
@@ -43,7 +44,7 @@ export function useEvaluatorDetails(
         {
           params: { path: { evaluatorId: evaluator.id } },
           body: data,
-        }
+        },
       );
 
       if (result.error) {
@@ -59,7 +60,10 @@ export function useEvaluatorDetails(
       onSuccess();
     },
     onError: (error: any) => {
-      console.error(error);
+      logger.error(
+        { error, evaluatorId: evaluator.id },
+        "Error creating online evaluator",
+      );
       setNotification("Error creating online evaluator", "error");
     },
   });
@@ -76,7 +80,7 @@ export function useEvaluatorDetails(
               onlineEvaluatorId: onlineEvaluatorId,
             },
           },
-        }
+        },
       );
 
       if (result.error) {
@@ -90,7 +94,10 @@ export function useEvaluatorDetails(
       onlineEvaluators.refetch();
     },
     onError: (error: any) => {
-      console.error(error);
+      logger.error(
+        { error, evaluatorId: evaluator.id },
+        "Error deleting online evaluator",
+      );
       setNotification("Error deleting online evaluator", "error");
     },
   });

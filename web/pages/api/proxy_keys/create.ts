@@ -11,6 +11,7 @@ import {
   getDecryptedProviderKeyById,
   HeliconeProxyKeys,
 } from "../../../services/lib/keys";
+import { logger } from "@/lib/telemetry/logger";
 
 type HashedPasswordRow = {
   hashed_password: string;
@@ -41,12 +42,11 @@ async function handler({
     return;
   }
 
-  const { data: providerKey, error } = await getDecryptedProviderKeyById(
-    providerKeyId
-  );
+  const { data: providerKey, error } =
+    await getDecryptedProviderKeyById(providerKeyId);
 
   if (error || !providerKey?.id) {
-    console.error("Failed to retrieve provider key", error);
+    logger.error({ error, providerKeyId }, "Failed to retrieve provider key");
     res
       .status(500)
       .json({ error: error ?? "Failed to retrieve provider key", data: null });
@@ -86,19 +86,25 @@ async function handler({
         heliconeProxyKeyName,
         hashedResult.data[0].hashed_password,
         providerKey.id,
-      ]
+      ],
     ),
-    (data) => data?.[0]
+    (data) => data?.[0],
   );
 
   if (newProxyMapping.error !== null) {
-    console.error("Failed to insert proxy key mapping", newProxyMapping.error);
+    logger.error(
+      { error: newProxyMapping.error, proxyKeyId, providerKeyId },
+      "Failed to insert proxy key mapping",
+    );
     res.status(500).json({ error: newProxyMapping.error, data: null });
     return;
   }
 
   if (newProxyMapping.data === null) {
-    console.error("Failed to insert proxy key mapping, no data returned");
+    logger.error(
+      { proxyKeyId, providerKeyId },
+      "Failed to insert proxy key mapping, no data returned",
+    );
     res.status(500).json({
       error: "Failed to insert proxy key mapping, no data returned",
       data: null,
@@ -119,7 +125,7 @@ async function handler({
           limit.count,
           limit.cost,
           limit.currency,
-        ]
+        ],
       );
     }
   }

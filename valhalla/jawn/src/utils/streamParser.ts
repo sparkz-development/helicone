@@ -3,14 +3,9 @@ export function consolidateTextFields(responseBody: any[]): any {
     const consolidated = responseBody.reduce((acc, cur) => {
       if (!cur) {
         return acc;
-      } else if (cur?.usage) {
-        return recursivelyConsolidate(acc, { usage: cur.usage });
-      } else if (cur?.response?.usage) {
-        // for response api streaming
-        return recursivelyConsolidate(acc, { usage: cur.response.usage });
       } else if (acc?.choices === undefined) {
         return cur;
-      } else {
+      } else if (cur?.choices) {
         // This is to handle the case if the choices array is empty (happens on Azure)
         if (acc.choices.length === 0 && cur.choices?.length !== 0) {
           acc.choices.push(...cur.choices.slice(acc.choices.length));
@@ -19,6 +14,11 @@ export function consolidateTextFields(responseBody: any[]): any {
         // Preserve x_groq field if it contains usage data
         if (cur?.x_groq?.usage) {
           acc.x_groq = cur.x_groq;
+        }
+
+        // Handle usage data in chunks that also have choices (Google AI Studio chat completions endpoint)
+        if (cur?.usage) {
+          acc.usage = cur.usage;
         }
 
         if ("model" in cur && "model" in acc) {
@@ -47,6 +47,13 @@ export function consolidateTextFields(responseBody: any[]): any {
                   content: c.delta.content
                     ? c.delta.content + (cur.choices[i].delta.content ?? "")
                     : cur.choices[i].delta.content,
+                  reasoning: c.delta.reasoning
+                    ? c.delta.reasoning + (cur.choices[i].delta.reasoning ?? "")
+                    : cur.choices[i].delta.reasoning,
+                  reasoning_details:
+                    c.delta.reasoning_details && cur.choices[i].delta.reasoning_details
+                      ? [...c.delta.reasoning_details, ...cur.choices[i].delta.reasoning_details]
+                      : c.delta.reasoning_details || cur.choices[i].delta.reasoning_details,
                   function_call: c.delta.function_call
                     ? recursivelyConsolidate(
                         c.delta.function_call,
@@ -54,9 +61,9 @@ export function consolidateTextFields(responseBody: any[]): any {
                       )
                     : cur.choices[i].delta.function_call,
                   tool_calls: c.delta.tool_calls
-                    ? recursivelyConsolidate(
+                    ? recursivelyConsolidateToolCalls(
                         c.delta.tool_calls,
-                        cur.choices[i].delta.tool_calls ?? {}
+                        cur.choices[i].delta.tool_calls ?? []
                       )
                     : cur.choices[i].delta.tool_calls,
                 },
@@ -74,6 +81,13 @@ export function consolidateTextFields(responseBody: any[]): any {
             }
           }),
         };
+      } else if (cur?.usage) {
+        // usage-only chunk
+        return recursivelyConsolidate(acc, { usage: cur.usage });
+      } else if (cur?.response?.usage) {
+        return recursivelyConsolidate(acc, { usage: cur.response.usage });
+      } else {
+        return acc;
       }
     }, {});
 
@@ -113,6 +127,111 @@ export function recursivelyConsolidate(body: any, delta: any): any {
     }
   });
   return body;
+}
+
+export function recursivelyConsolidateToolCalls(
+  existingToolCalls: any[],
+  newToolCalls: any[]
+): any[] {
+  if (!existingToolCalls || existingToolCalls.length === 0) {
+    return newToolCalls || [];
+  }
+
+  if (!newToolCalls || newToolCalls.length === 0) {
+    return existingToolCalls;
+  }
+
+  const finalToolCalls: { [key: number]: any } = {};
+
+  // Initialize with existing tool calls
+  existingToolCalls.forEach((toolCall) => {
+    if (toolCall.index !== undefined) {
+      finalToolCalls[toolCall.index] = { ...toolCall };
+    }
+  });
+
+  // Process new tool calls
+  newToolCalls.forEach((toolCall) => {
+    const { index } = toolCall;
+
+    if (!finalToolCalls[index]) {
+      // New tool call
+      finalToolCalls[index] = { ...toolCall };
+    } else {
+      // Existing tool call - consolidate
+      const existing = finalToolCalls[index];
+
+      // Merge function arguments if both have function data
+      if (toolCall.function && existing.function) {
+        if (!existing.function.arguments) {
+          existing.function.arguments = "";
+        }
+        if (toolCall.function.arguments) {
+          existing.function.arguments += toolCall.function.arguments;
+        }
+      } else if (toolCall.function) {
+        // If existing doesn't have function but new one does
+        existing.function = toolCall.function;
+      }
+
+      // Merge other fields
+      if (toolCall.id && !existing.id) {
+        existing.id = toolCall.id;
+      }
+      if (toolCall.type && !existing.type) {
+        existing.type = toolCall.type;
+      }
+    }
+  });
+
+  // Convert back to array and sort by index
+  return Object.values(finalToolCalls).sort((a, b) => a.index - b.index);
+}
+
+/**
+ * Consolidates OpenAI Responses API streaming events into a complete response object.
+ * The response.completed event contains the full response, so we extract that directly.
+ * Falls back to manual consolidation if response.completed is not found.
+ */
+export function consolidateResponsesAPIFields(responseBody: any[]): any {
+  // Find the response.completed event - it contains the complete response
+  const completedEvent = responseBody.find(
+    (item) => item?.type === "response.completed"
+  );
+
+  if (completedEvent?.response) {
+    return completedEvent.response;
+  }
+
+  // Fallback: manual consolidation from individual events
+  // Get the base response from response.created or response.in_progress
+  const createdEvent = responseBody.find(
+    (item) => item?.type === "response.created"
+  );
+  const inProgressEvent = responseBody.find(
+    (item) => item?.type === "response.in_progress"
+  );
+
+  const baseResponse = createdEvent?.response || inProgressEvent?.response;
+
+  if (!baseResponse) {
+    // If we can't find any response events, return the first non-error item
+    return responseBody.find(
+      (item) => item && !item.error && typeof item === "object"
+    );
+  }
+
+  // Build the output array from response.output_item.done events
+  const outputItems = responseBody
+    .filter((item) => item?.type === "response.output_item.done")
+    .sort((a, b) => (a.output_index ?? 0) - (b.output_index ?? 0))
+    .map((item) => item.item);
+
+  return {
+    ...baseResponse,
+    status: "completed",
+    output: outputItems.length > 0 ? outputItems : baseResponse.output,
+  };
 }
 
 export function consolidateGoogleTextFields(responseBody: any[]): any {

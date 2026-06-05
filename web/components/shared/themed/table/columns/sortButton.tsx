@@ -38,12 +38,16 @@ export default function SortButton<T>(props: SortButtonProps<T>) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[200px]">
-        <Row className="p-2 gap-2">
+        <Row className="gap-2 p-2">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => {
-              const { sortDirection, sortKey, ...restQuery } = router.query;
+              const {
+                sortDirection: _,
+                sortKey: __,
+                ...restQuery
+              } = router.query;
               router.push({
                 pathname: router.pathname,
                 query: restQuery,
@@ -59,7 +63,7 @@ export default function SortButton<T>(props: SortButtonProps<T>) {
                   pathname: router.pathname,
                   query: { ...router.query, sortKey: option },
                 },
-                undefined
+                undefined,
               );
             }}
             value={router.query.sortKey as string}
@@ -91,7 +95,7 @@ export default function SortButton<T>(props: SortButtonProps<T>) {
                     sortDirection: checked ? "asc" : "desc",
                   },
                 },
-                undefined
+                undefined,
               );
             }}
           />

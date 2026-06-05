@@ -1,8 +1,11 @@
 import { ModelDetailsMap, ModelRow } from "../interfaces/Cost";
 import { anthropicProvider } from "./anthropic";
 import { costs as avianCosts } from "./avian";
-import { costs as awsBedrockCosts } from "./awsBedrock";
+import { costs as awsBedrockCosts } from "./aws/awsBedrock";
+import { costs as awsNovaCosts } from "./aws/awsNova";
 import { costs as azureCosts } from "./azure";
+import { costs as llamaCosts } from "./llama";
+import { costs as nvidiaCosts } from "./nvidia";
 import { costs as cohereCosts } from "./cohere";
 import { costs as deepseekCosts } from "./deepseek";
 import { costs as fireworksAICosts } from "./fireworks";
@@ -23,13 +26,18 @@ import {
 } from "./togetherai/completion";
 import { costs as xCosts } from "./x";
 import { googleProvider } from "./google";
+import { costs as vercelCosts } from "./vercel";
 
-const openAiPattern = /^https:\/\/api\.openai\.com/;
+// Matches both standard api.openai.com and US data residency us.api.openai.com
+const openAiPattern = /^https:\/\/(us\.)?api\.openai\.com(\/|$)/;
 const anthropicPattern = /^https:\/\/api\.anthropic\.com/;
-const azurePattern =
-  /^(https?:\/\/)?([^.]*\.)?(openai\.azure\.com|azure-api\.net|cognitiveservices\.azure\.com)(\/.*)?$/;
+export const azurePattern =
+  /^(https?:\/\/)?([^.]*\.)?(openai\.azure\.com|azure-api\.net|cognitiveservices\.azure\.com|services\.ai\.azure\.com)(\/.*)?$/;
+const llamaApiPattern = /^https:\/\/api\.llama\.com/;
+const nvidiaApiPattern = /^https:\/\/integrate\.api\.nvidia\.com/;
 const localProxyPattern = /^http:\/\/127\.0\.0\.1:\d+\/v\d+\/?$/;
 const heliconeProxyPattern = /^https:\/\/oai\.hconeai\.com/;
+const heliconeInferencePattern = /^https:\/\/inference\.helicone\.ai/;
 const amdbartekPattern = /^https:\/\/.*\.amdbartek\.dev/;
 const anyscalePattern = /^https:\/\/api\.endpoints\.anyscale\.com/;
 const cloudflareAiGatewayPattern = /^https:\/\/gateway\.ai\.cloudflare\.com/;
@@ -57,17 +65,34 @@ const qstash = /^https:\/\/qstash\.upstash\.io/;
 const firecrawl = /^https:\/\/api\.firecrawl\.dev/;
 // https://bedrock-runtime.{some-region}.amazonaws.com/{something-after}
 const awsBedrock = /^https:\/\/bedrock-runtime\.[a-z0-9-]+\.amazonaws\.com\/.*/;
+// https://bedrock-runtime.{some-region}.amazonaws.com/{something-after} same runtime
+const awsNova = /^https:\/\/bedrock-runtime\.[a-z0-9-]+\.amazonaws\.com\/.*/;
 // https://api.deepseek.com
 const deepseek = /^https:\/\/api\.deepseek\.com/;
 // https://api.x.ai
 const x = /^https:\/\/api\.x\.ai/;
 const avianPattern = /^https:\/\/api\.avian\.io/;
 
-//https://api.studio.nebius.ai
-const nebius = /^https:\/\/api\.studio\.nebius\.ai/;
+//https://api.tokenfactory.nebius.com
+const nebius = /^https:\/\/api\.tokenfactory\.nebius\.com/;
+
+// https://ai-gateway.vercel.sh
+const vercelGateway = /^https:\/\/ai-gateway\.vercel\.sh/;
 
 // https://api.novita.ai
 const novita = /^https:\/\/api\.novita\.ai/;
+
+// api.openpipe.ai
+const openpipe = /^https:\/\/api\.openpipe\.ai/;
+
+// llm.chutes.com and chutes.com
+const chutes = /^https:\/\/(llm\.)?chutes\.com/;
+
+// https://api.cerebras.ai
+const cerebras = /^https:\/\/api\.cerebras\.ai/;
+
+// https://inference.canopywave.io
+const canopywave = /^https:\/\/inference\.canopywave\.io/;
 
 export const providersNames = [
   "OPENAI",
@@ -93,11 +118,20 @@ export const providersNames = [
   "QSTASH",
   "FIRECRAWL",
   "AWS",
+  "BEDROCK",
   "DEEPSEEK",
   "X",
   "AVIAN",
   "NEBIUS",
   "NOVITA",
+  "OPENPIPE",
+  "CHUTES",
+  "LLAMA",
+  "NVIDIA",
+  "VERCEL",
+  "CEREBRAS",
+  "BASETEN",
+  "CANOPYWAVE",
 ] as const;
 
 export type ProviderName = (typeof providersNames)[number];
@@ -123,6 +157,16 @@ export const providers: {
     modelDetails: anthropicProvider.modelDetails,
   },
   {
+    pattern: llamaApiPattern,
+    provider: "LLAMA",
+    costs: llamaCosts,
+  },
+  {
+    pattern: nvidiaApiPattern,
+    provider: "NVIDIA",
+    costs: nvidiaCosts,
+  },
+  {
     pattern: azurePattern,
     provider: "AZURE",
     costs: [...azureCosts, ...openAIProvider.costs],
@@ -138,6 +182,10 @@ export const providers: {
   },
   {
     pattern: heliconeProxyPattern,
+    provider: "HELICONE",
+  },
+  {
+    pattern: heliconeInferencePattern,
     provider: "HELICONE",
   },
   {
@@ -231,6 +279,11 @@ export const providers: {
   {
     pattern: awsBedrock,
     provider: "AWS",
+    costs: [...awsBedrockCosts, ...awsNovaCosts],
+  },
+  {
+    pattern: awsBedrock,
+    provider: "BEDROCK",
     costs: awsBedrockCosts,
   },
   {
@@ -248,30 +301,36 @@ export const providers: {
     provider: "NOVITA",
     costs: novitaCosts,
   },
+  {
+    pattern: openpipe,
+    provider: "OPENPIPE",
+    costs: [],
+  },
+  {
+    pattern: chutes,
+    provider: "CHUTES",
+    costs: [],
+  },
+  {
+    pattern: vercelGateway,
+    provider: "VERCEL",
+    costs: vercelCosts,
+  },
+  {
+    pattern: cerebras,
+    provider: "CEREBRAS",
+    costs: [],
+  },
+  {
+    pattern: canopywave,
+    provider: "CANOPYWAVE",
+    costs: [],
+  }
 ];
-
-export const playgroundModels: {
-  name: string;
-  provider: ProviderName;
-}[] =
-  (providers
-    .map((provider) => {
-      return provider.costs
-        ?.filter((cost) => cost.showInPlayground)
-        .map((cost) => ({
-          name: cost.model.value,
-          provider: provider.provider,
-        }));
-    })
-    .flat()
-    .filter((model) => model !== undefined) as {
-    name: string;
-    provider: ProviderName;
-  }[]) ?? [];
 
 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 export const defaultProvider = providers.find(
-  (provider) => provider.provider === "OPENAI"
+  (provider) => provider.provider === "OPENAI",
 )!;
 
 export const allCosts = providers.flatMap((provider) => provider.costs ?? []);
@@ -280,9 +339,12 @@ export const approvedDomains = providers.map((provider) => provider.pattern);
 
 export const modelNames = allCosts.map((cost) => cost.model.value);
 
-export const parentModelNames = providers.reduce((acc, provider) => {
-  if (provider.modelDetails) {
-    acc[provider.provider] = Object.keys(provider.modelDetails);
-  }
-  return acc;
-}, {} as Record<ProviderName, string[]>);
+export const parentModelNames = providers.reduce(
+  (acc, provider) => {
+    if (provider.modelDetails) {
+      acc[provider.provider] = Object.keys(provider.modelDetails);
+    }
+    return acc;
+  },
+  {} as Record<ProviderName, string[]>,
+);

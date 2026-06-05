@@ -4,15 +4,14 @@ import {
   OpenAPIRouterType,
 } from "@cloudflare/itty-router-openapi";
 
-import { Env } from "..";
 import { RequestWrapper } from "../lib/RequestWrapper";
 import { getAnthropicProxyRouter } from "./anthropicProxyRouter";
 import { getAPIRouter } from "./api/apiRouter";
 import { getOpenAIProxyRouter } from "./openaiProxyRouter";
 import { handleFeedback } from "../lib/managers/FeedbackManager";
 import { getGatewayAPIRouter } from "./gatewayRouter";
-import { handleLoggingEndpoint } from "../lib/managers/PropertiesManager";
 import { getGenerateRouter } from "./generateRouter";
+import { getAIGatewayRouter } from "./aiGatewayRouter";
 
 export type BaseRouter = RouterType<
   Route,
@@ -24,19 +23,16 @@ export type BaseOpenAPIRouter = OpenAPIRouterType<
   [requestWrapper: RequestWrapper, env: Env, ctx: ExecutionContext]
 >;
 
-const WORKER_MAP: Omit<
-  {
-    [key in Env["WORKER_TYPE"]]: (router: BaseRouter) => BaseRouter;
-  },
-  "HELICONE_API"
-> & {
-  HELICONE_API: (router: OpenAPIRouterType) => OpenAPIRouterType;
-} = {
+const WORKER_MAP = {
   ANTHROPIC_PROXY: getAnthropicProxyRouter,
   OPENAI_PROXY: getOpenAIProxyRouter,
+  VAPI_PROXY: () => {
+    throw new Error("VAPI_PROXY not implemented");
+  },
   HELICONE_API: getAPIRouter,
   GATEWAY_API: getGatewayAPIRouter,
   GENERATE_API: getGenerateRouter,
+  AI_GATEWAY_API: getAIGatewayRouter,
   CUSTOMER_GATEWAY: (router: BaseRouter) => {
     router.all(
       "*",
@@ -123,18 +119,6 @@ function addBaseRoutes(router: BaseRouter | BaseOpenAPIRouter): void {
       });
     }
   );
-
-  router.post(
-    "/v1/log",
-    async (
-      _,
-      requestWrapper: RequestWrapper,
-      env: Env,
-      _ctx: ExecutionContext
-    ) => {
-      return await handleLoggingEndpoint(requestWrapper, env);
-    }
-  );
 }
 
 export function buildRouter(
@@ -166,6 +150,6 @@ export function buildRouter(
       });
     }
     addBaseRoutes(router);
-    return WORKER_MAP[provider](router);
+    return WORKER_MAP[provider as keyof typeof WORKER_MAP](router as any);
   }
 }

@@ -11,17 +11,17 @@ interface FeedbackMetric {
 }
 
 async function getFeedbackMetrics(
-  org_id: string
+  org_id: string,
 ): Promise<Result<FeedbackMetric[], string>> {
   const query = `
     SELECT f.name, f.data_type
     FROM feedback_metrics f
     JOIN helicone_api_keys h ON f.helicone_api_key_id = h.id
-    WHERE h.organization_id = '${org_id}'
+    WHERE h.organization_id = $1
     LIMIT 1000;
   `;
 
-  const { data, error } = await dbExecute<FeedbackMetric>(query, []);
+  const { data, error } = await dbExecute<FeedbackMetric>(query, [org_id]);
   if (error !== null) {
     return { data: null, error: error };
   }
@@ -29,7 +29,6 @@ async function getFeedbackMetrics(
 }
 
 async function handler({
-  req,
   res,
   userData: { orgId },
 }: HandlerWrapperOptions<Result<FeedbackMetric[], string>>) {

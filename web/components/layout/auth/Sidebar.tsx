@@ -1,10 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import {
   ArchiveIcon,
-  BellIcon,
-  ChartLineIcon,
   DatabaseIcon,
-  FlaskConicalIcon,
   Home,
   ListTreeIcon,
   ScrollTextIcon,
@@ -12,11 +9,12 @@ import {
   ShieldCheckIcon,
   TagIcon,
   TestTube2,
+  TriangleAlertIcon,
   UsersIcon,
-  Webhook,
+  Code2Icon,
 } from "lucide-react";
 import { useRouter } from "next/router";
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import DesktopSidebar from "./DesktopSidebar";
 import { ChangelogItem, NavigationItem } from "./types";
 
@@ -44,7 +42,6 @@ const Sidebar = ({ changelog, setOpen, sidebarRef }: SidebarProps) => {
         icon: SheetIcon,
         current: pathname.includes("/requests"),
       },
-
       {
         name: "Segments",
         href: "/segments",
@@ -63,12 +60,23 @@ const Sidebar = ({ changelog, setOpen, sidebarRef }: SidebarProps) => {
             icon: TagIcon,
             current: pathname.includes("/properties"),
           },
-
           {
             name: "Users",
             href: "/users",
             icon: UsersIcon,
             current: pathname.includes("/users"),
+          },
+          {
+            name: "Cache",
+            href: "/cache",
+            icon: ArchiveIcon,
+            current: pathname.includes("/cache"),
+          },
+          {
+            name: "HQL",
+            href: "/hql",
+            icon: Code2Icon,
+            current: pathname.includes("/hql"),
           },
         ],
       },
@@ -83,19 +91,6 @@ const Sidebar = ({ changelog, setOpen, sidebarRef }: SidebarProps) => {
             href: "/prompts",
             icon: ScrollTextIcon,
             current: pathname.includes("/prompts"),
-            isNew: true,
-          },
-          {
-            name: "Experiments",
-            href: "/experiments",
-            icon: FlaskConicalIcon,
-            current: pathname.includes("/experiments"),
-          },
-          {
-            name: "Evaluators",
-            href: "/evaluators",
-            icon: ChartLineIcon,
-            current: pathname.includes("/evaluators"),
           },
           {
             name: "Datasets",
@@ -105,25 +100,18 @@ const Sidebar = ({ changelog, setOpen, sidebarRef }: SidebarProps) => {
           },
           {
             name: "Playground",
-            href: "/prompts/fromPlayground",
+            href: "/playground",
             icon: TestTube2,
-            current: pathname.includes("/prompts/fromPlayground"),
+            current: pathname.includes("/playground"),
           },
         ],
       },
-
       {
-        name: "Developer",
-        href: "/developer",
+        name: "Monitor",
+        href: "/monitor",
         icon: null,
-        current: pathname.includes("/developer"),
+        current: false,
         subItems: [
-          {
-            name: "Cache",
-            href: "/cache",
-            icon: ArchiveIcon,
-            current: pathname.includes("/cache"),
-          },
           {
             name: "Rate Limits",
             href: "/rate-limit",
@@ -133,31 +121,13 @@ const Sidebar = ({ changelog, setOpen, sidebarRef }: SidebarProps) => {
           {
             name: "Alerts",
             href: "/alerts",
-            icon: BellIcon,
+            icon: TriangleAlertIcon,
             current: pathname.includes("/alerts"),
           },
-          {
-            name: "Webhooks",
-            href: "/webhooks",
-            icon: Webhook,
-            current: pathname.includes("/webhooks"),
-          },
-          // {
-          //   name: "Providers",
-          //   href: "/providers",
-          //   icon: ServerIcon,
-          //   current: pathname.includes("/providers"),
-          // },
-          // {
-          //   name: "Vault",
-          //   href: "/vault",
-          //   icon: LockIcon,
-          //   current: pathname.includes("/vault"),
-          // },
         ],
       },
     ],
-    [pathname]
+    [pathname],
   );
 
   return (

@@ -22,12 +22,13 @@ import TeamCard from "../components/templates/pricing/TeamCard";
 import CustomerHighlights from "../components/templates/pricing/CustomerHighlights";
 import AvailableDiscounts from "../components/templates/pricing/AvailableDiscounts";
 import Companies from "@/components/home/Companies";
+import UsageEstimator from "../components/templates/pricing/UsageEstimator";
 
 export default function PricingPage() {
   return (
     <div className="bg-background text-slate-700">
       <div className=" mx-auto antialiased">
-        <div className="flex flex-col max-w-6xl mx-auto p-4 pb-24 pt-8 sm:pb-32 lg:flex gap-8 md:gap-16">
+        <div className="flex flex-col max-w-6xl mx-auto p-8 lg:flex gap-8 md:gap-16">
           <Col className="items-center gap-4">
             <span className="block sm:hidden">
               <Image
@@ -62,18 +63,16 @@ export default function PricingPage() {
             <TeamCard />
             <EnterpriseCard />
           </div>
+        </div>
 
-          <div className="flex mt-4 justify-center flex-col items-center gap-4">
-            <h2 className="text-xl font-semibold text-sidebar-foreground text-center leading-8">
-              Powering leading companies
-              <br />
-              <span className="text-muted-foreground">
-                from next-gen startups to enterprise
-              </span>
-            </h2>
-            <Companies className="w-full" />
+        {/* Full-width gray section for calculator */}
+        <div id="calculator" className="bg-slate-50 py-12">
+          <div className="max-w-6xl mx-auto px-4">
+            <UsageEstimator />
           </div>
+        </div>
 
+        <div className="flex flex-col max-w-6xl mx-auto p-4 pt-8 gap-8 md:gap-16">
           <CustomerHighlights />
 
           <PricingComparisonTable />
@@ -89,13 +88,17 @@ export default function PricingPage() {
             </div>
             <div className="w-full sm:w-1/2 text-accent-foreground">
               <Accordion type="single" collapsible className="w-full">
-
                 <AccordionItem value="item-1">
                   <AccordionTrigger className="font-medium text-left">
                     What do I get with the free plan?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
-                    The free plan gives you everything you need to get started. This includes full visibility into your LLM requests, response times, detailed usage metrics, and useful toolings like Sessions and Prompt Editor. It&apos;s perfect for testing and building early versions of your AI app - without needing a credit card.
+                    The free plan gives you everything you need to get started.
+                    This includes full visibility into your LLM requests,
+                    response times, detailed usage metrics, and useful toolings
+                    like Sessions and Prompt Editor. It&apos;s perfect for
+                    testing and building early versions of your AI app - without
+                    needing a credit card.
                   </AccordionContent>
                 </AccordionItem>
 
@@ -104,22 +107,45 @@ export default function PricingPage() {
                     How is Helicone&apos;s usage-based pricing calculated?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
-                    Helicone&apos;s usage-based pricing is calculated based on the number of requests you make to our API. You can find the rate per log under &quot;Additional logs&quot; in the table above.
+                    Helicone&apos;s usage-based pricing has two components:
                     <br />
                     <br />
-                    You can also find your monthly usage in the <Link href="https://us.helicone.ai/settings/billing" className="underline hover:text-brand">Billing</Link> page in product.
+                    <strong>Request-based pricing:</strong> The first 10,000
+                    requests are free. After that, rates decrease as your usage
+                    grows, starting at $0.0007/request and going as low as
+                    $0.00002/request for high volumes.
+                    <br />
+                    <br />
+                    <strong>Storage-based pricing:</strong> Storage is billed in
+                    tiers starting at $3.25/GB for the first 30 GB, decreasing
+                    to $0.50/GB for volumes over 450 GB.
+                    <br />
+                    <br />
+                    You can find your monthly usage in the{" "}
+                    <Link
+                      href="https://us.helicone.ai/settings/billing"
+                      className="underline hover:text-brand"
+                    >
+                      Billing
+                    </Link>{" "}
+                    page in product.
                   </AccordionContent>
                 </AccordionItem>
 
                 <AccordionItem value="item-3">
                   <AccordionTrigger className="font-medium text-left">
-                    What happens if I exceed my request limit?
+                    What happens if I exceed my limits?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
-                    On the Free plan, you can view up to 10,000 requests per month in Helicone. Don&apos;t worry, we are still logging all your incoming requests in the background. To access them, you can upgrade to the Pro plan at any time.
+                    On the Free plan, you get 10,000 free requests and 1 GB of
+                    storage. We continue logging all your requests in the
+                    background. To access them, you can upgrade to the Pro plan
+                    at any time.
                     <br />
                     <br />
-                    If you are on the Pro or Team plan, any usage beyond 10,000 requests per month will be automatically billed.
+                    If you are on the Pro or Team plan, additional usage is
+                    automatically billed at tiered rates that decrease as you
+                    scale - the more you use, the less you pay per unit.
                   </AccordionContent>
                 </AccordionItem>
 
@@ -128,10 +154,27 @@ export default function PricingPage() {
                     Can I switch plans or cancel anytime?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
-                    Yes! You can switch plans or cancel anytime - no lock-ins or long-term commitments. Add-ons are pro-rated, so you&apos;ll only pay for the time you use them. You can manage your plan directly in the <Link href="https://us.helicone.ai/settings/billing" className="underline hover:text-brand">Billing</Link> page.
+                    Yes! You can switch plans or cancel anytime - no lock-ins or
+                    long-term commitments. You can manage your plan directly in
+                    the{" "}
+                    <Link
+                      href="https://us.helicone.ai/settings/billing"
+                      className="underline hover:text-brand"
+                    >
+                      Billing
+                    </Link>{" "}
+                    page.
                     <br />
                     <br />
-                    For advanced needs like on-prem deployment, custom SLAs, or additional security requriements, <Link href="/contact" className="underline hover:text-brand">contact us</Link> about a custom Enterprise plan.
+                    For advanced needs like on-prem deployment, custom SLAs, or
+                    additional security requriements,{" "}
+                    <Link
+                      href="/contact"
+                      className="underline hover:text-brand"
+                    >
+                      contact us
+                    </Link>{" "}
+                    about a custom Enterprise plan.
                   </AccordionContent>
                 </AccordionItem>
 
@@ -140,10 +183,24 @@ export default function PricingPage() {
                     Does Helicone work with my LLM provider?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
-                    Yes! Helicone works seamlessly with most major LLM providers out of the box, including OpenAI, Anthropic, Gemini, Vercel AI SDK, Azure, AWS Bedrock, OpenRouter, LangChain, Groq, LiteLLM, and more. Just update your base URL and add our API key.
+                    Yes! Helicone works seamlessly with most major LLM providers
+                    out of the box, including OpenAI, Anthropic, Gemini, Vercel
+                    AI SDK, Azure, AWS Bedrock, OpenRouter, LangChain, Groq,
+                    LiteLLM, and more. Just update your base URL and add our API
+                    key.
                     <br />
                     <br />
-                    If you are using a custom model or a less-known provider, Helicone can still support it with a simple proxy setup. See our <Link href="https://docs.helicone.ai/getting-started/integration-method/gateway" className="underline hover:text-brand">Integration docs</Link> or reach out to us - we&apos;re happy to help you get set up.
+                    If you are using a custom model or a less-known provider,
+                    Helicone can still support it with a simple proxy setup. See
+                    our{" "}
+                    <Link
+                      href="https://docs.helicone.ai/getting-started/integration-method/gateway"
+                      className="underline hover:text-brand"
+                    >
+                      Integration docs
+                    </Link>{" "}
+                    or reach out to us - we&apos;re happy to help you get set
+                    up.
                   </AccordionContent>
                 </AccordionItem>
 
@@ -152,26 +209,42 @@ export default function PricingPage() {
                     Is there a plan for teams or enterprise use?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
-                    Yes! Helicone offers a Team plan designed for collaboration, with shared dashboards, role-based access control, and usage-based billing.
+                    Yes! Helicone offers a Team plan designed for collaboration,
+                    with shared dashboards, role-based access control, and
+                    usage-based billing.
                     <br />
                     <br />
-                    For advanced needs like on-prem deployment, custom SLAs, or security reviews, we also offer custom Enterprise plans. <Link href="/signup" className="underline hover:text-brand">Contact us</Link> to learn more or get a quote tailored to your team.
+                    For advanced needs like on-prem deployment, custom SLAs, or
+                    security reviews, we also offer custom Enterprise plans.{" "}
+                    <Link href="/signup" className="underline hover:text-brand">
+                      Contact us
+                    </Link>{" "}
+                    to learn more or get a quote tailored to your team.
                   </AccordionContent>
                 </AccordionItem>
 
                 <AccordionItem value="item-7">
                   <AccordionTrigger className="font-medium text-left">
-                    Do you offer discounts for startups, students, or open source projects?
+                    Do you offer discounts for startups, students, or open
+                    source projects?
                   </AccordionTrigger>
                   <AccordionContent className="accordion-content-style">
                     Yes! We love supporting the community.
                     <br />
                     <br />
                     If you are a startup under 2 years old with &lt; $5m in
-                    funding, a non-profit, a student, or working on an open-source project, <Link href="/contact" className="underline hover:text-brand">reach out</Link> to us! We may be able to offer discounts and credits to help you get started with Helicone.
+                    funding, a non-profit, a student, or working on an
+                    open-source project,{" "}
+                    <Link
+                      href="/contact"
+                      className="underline hover:text-brand"
+                    >
+                      reach out
+                    </Link>{" "}
+                    to us! We may be able to offer discounts and credits to help
+                    you get started with Helicone.
                   </AccordionContent>
                 </AccordionItem>
-
               </Accordion>
             </div>
           </div>
@@ -201,13 +274,12 @@ export default function PricingPage() {
                       Helicone or LangSmith?
                     </h3>
                     <p className="mt-2 text-base leading-7 text-slate-700">
-                      Short answer: Helicone gives you more provider flexibility, is open-source, and scales more cost-effectively.
+                      Short answer: Helicone gives you more provider
+                      flexibility, is open-source, and scales more
+                      cost-effectively.
                     </p>
                     <div className="mt-4 lg:mt-auto">
-                      <Button
-                        asChild
-                        variant="outline"
-                      >
+                      <Button asChild variant="outline">
                         <Link href="/blog/langsmith-vs-helicone">
                           <BookOpenIcon className="size-4 mr-2" />
                           Read more
@@ -221,6 +293,6 @@ export default function PricingPage() {
           </div>
         </div>
       </div>
-    </div >
+    </div>
   );
 }

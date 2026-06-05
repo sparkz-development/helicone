@@ -10,10 +10,9 @@ import { RequestsOverTime } from "../../../lib/timeCalculations/fetchTimeData";
 import { MetricsBackendBody } from "../../../services/hooks/useBackendFunction";
 
 async function handler(
-  options: HandlerWrapperOptions<Result<RequestsOverTime[], string>>
+  options: HandlerWrapperOptions<Result<RequestsOverTime[], string>>,
 ) {
   const {
-    req,
     res,
     userData: { orgId },
   } = options;
@@ -31,7 +30,7 @@ async function handler(
       dbIncrement: dbIncrement ?? "hour",
       timeZoneDifference,
     },
-    ["request_response_rmt.status as status"]
+    ["request_response_rmt.status as status"],
   );
 
   res.status(200).json(totalRequests);

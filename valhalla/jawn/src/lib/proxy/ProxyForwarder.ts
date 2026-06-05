@@ -1,6 +1,6 @@
 import { Response } from "node-fetch";
 import { Provider } from "@helicone-package/llm-mapper/types";
-import { HeliconeQueueProducer } from "../clients/HeliconeQuequeProducer";
+import { HeliconeQueueProducer } from "../clients/HeliconeQueueProducer";
 import { RequestWrapper } from "../requestWrapper/requestWrapper";
 import { getHeliconeAuthClient } from "../../packages/common/auth/server/AuthClientFactory";
 import { S3Client } from "../shared/db/s3Client";
@@ -104,8 +104,8 @@ async function log(
     {
       s3Manager: new S3Manager(
         new S3Client(
-          process.env.S3_ACCESS_KEY ?? "",
-          process.env.S3_SECRET_KEY ?? "",
+          process.env.S3_ACCESS_KEY || undefined,
+          process.env.S3_SECRET_KEY || undefined,
           process.env.S3_ENDPOINT ?? "",
           process.env.S3_BUCKET_NAME ?? "",
           (process.env.S3_REGION as "us-west-2" | "eu-west-1") ?? "us-west-2"

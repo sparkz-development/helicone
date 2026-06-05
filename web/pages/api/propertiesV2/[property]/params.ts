@@ -10,7 +10,7 @@ import {
 import { Result } from "@/packages/common/result";
 
 async function handler(
-  options: HandlerWrapperOptions<Result<PropertyParam[], string>>
+  options: HandlerWrapperOptions<Result<PropertyParam[], string>>,
 ) {
   const {
     req,
@@ -24,10 +24,8 @@ async function handler(
   const properties = await getPropertyParamsV2(
     orgId,
     property as string,
-    search as string
+    search as string,
   );
-
-  console.log(properties);
 
   res.status(properties.error === null ? 200 : 500).json(properties);
 }

@@ -1,4 +1,3 @@
-import { buttonVariants } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
@@ -7,6 +6,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
+import React from "react";
 
 interface NavigationItem {
   name: string;
@@ -46,19 +46,19 @@ const NavItem: React.FC<NavItemProps> = ({
           <Link
             href={hasSubItems ? link.subItems![0].href : link.href}
             className={cn(
-              buttonVariants({
-                variant: "ghost",
-                size: "icon",
-              }),
-              "h-9 w-9",
-              link.current && "bg-accent hover:bg-accent"
+              "inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+              link.current
+                ? "bg-blue-100 hover:bg-blue-100 dark:bg-blue-900/50 dark:hover:bg-blue-900/50"
+                : "hover:bg-slate-200/70 dark:hover:bg-slate-700/50",
             )}
           >
             {link.icon && (
               <link.icon
                 className={cn(
-                  "h-4 w-4 text-slate-500",
-                  link.current && "text-slate-800 dark:text-slate-200"
+                  "h-4 w-4",
+                  link.current
+                    ? "text-slate-700 dark:text-slate-300"
+                    : "text-slate-500",
                 )}
               />
             )}
@@ -85,32 +85,32 @@ const NavItem: React.FC<NavItemProps> = ({
         onClick={hasSubItems ? () => toggleExpand(link.name) : onClick}
         className={cn(
           hasSubItems
-            ? "flex items-center gap-0.5 text-slate-400 text-xs mt-[14px] text-[11px] font-normal pl-2"
+            ? "mt-[14px] flex items-center gap-0.5 pl-2 text-[11px] text-xs font-normal text-slate-400"
             : cn(
-                buttonVariants({
-                  variant: link.current ? "secondary" : "ghost",
-                  size: "xs",
-                }),
+                "flex items-center justify-start rounded-md px-3 transition-colors",
                 deep && deep > 1 ? "h-6" : "h-8",
-                "justify-start w-full font-normal",
-                "text-sm  text-[12px] text-slate-500",
-                link.current && "text-slate-800 dark:text-slate-200"
+                "w-full font-normal",
+                "text-[12px]",
+                link.current
+                  ? "bg-blue-100 text-slate-900 hover:bg-blue-100 dark:bg-blue-900/50 dark:text-slate-100 dark:hover:bg-blue-900/50"
+                  : "text-slate-500 hover:bg-slate-200 hover:text-slate-900 dark:hover:bg-slate-700 dark:hover:text-slate-100",
               ),
-          ""
         )}
       >
         <div className="flex items-center">
           {link.icon && (
             <link.icon
               className={cn(
-                "mr-2 h-3.5 w-3.5 text-slate-500",
-                link.current && "text-slate-800 dark:text-slate-200"
+                "mr-2 h-3.5 w-3.5",
+                link.current
+                  ? "text-slate-700 dark:text-slate-300"
+                  : "text-slate-500",
               )}
             />
           )}
           {link.name}
           {link.isNew && (
-            <div className="uppercase text-[9px] font-semibold border bg-gradient-to-r from-sky-400 via-heliblue to-sky-400 border-sky-500 px-1.5 rounded-full text-white ml-2 animate-shine bg-[length:200%_100%]">
+            <div className="ml-2 animate-shine rounded-full border border-sky-500 bg-gradient-to-r from-sky-400 via-heliblue to-sky-400 bg-[length:200%_100%] px-1.5 text-[9px] font-semibold uppercase text-white">
               New
             </div>
           )}
@@ -118,8 +118,8 @@ const NavItem: React.FC<NavItemProps> = ({
         {hasSubItems && (
           <ChevronDownIcon
             className={cn(
-              "h-3 w-3 transition-transform text-slate-400",
-              !expandedItems.includes(link.name) && "-rotate-90"
+              "h-3 w-3 text-slate-400 transition-transform",
+              !expandedItems.includes(link.name) && "-rotate-90",
             )}
           />
         )}

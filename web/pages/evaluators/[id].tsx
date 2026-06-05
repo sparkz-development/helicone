@@ -1,6 +1,7 @@
 import { ReactElement, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import AuthLayout from "../../components/layout/auth/authLayout";
+import { logger } from "@/lib/telemetry/logger";
 import AuthHeader from "@/components/shared/authHeader";
 import { Card } from "@/components/ui/card";
 import { useEvaluators } from "@/components/templates/evals/EvaluatorHook";
@@ -71,7 +72,7 @@ const EvaluatorDetail = () => {
   });
 
   // State for managing create modal
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [, setShowCreateModal] = useState(false);
 
   // State for managing modal visibility - explicitly set to false to prevent auto-opening
   const [showEvaluatorsModal, setShowEvaluatorsModal] = useState(false);
@@ -131,7 +132,7 @@ const EvaluatorDetail = () => {
           // Use the helper to extract all parameters from the template
           const params = openAITemplateToOpenAIFunctionParams(
             template,
-            formattedScoringType
+            formattedScoringType,
           );
 
           // Extract includedVariables directly from the template since
@@ -149,16 +150,16 @@ const EvaluatorDetail = () => {
             // Check which sections are included in the template text
             extractedIncludedVariables = {
               inputs: templateText.includes(
-                '<helicone-prompt-input key="inputs" />'
+                '<helicone-prompt-input key="inputs" />',
               ),
               promptTemplate: templateText.includes(
-                '<helicone-prompt-input key="promptTemplate" />'
+                '<helicone-prompt-input key="promptTemplate" />',
               ),
               inputBody: templateText.includes(
-                '<helicone-prompt-input key="inputBody" />'
+                '<helicone-prompt-input key="inputBody" />',
               ),
               outputBody: templateText.includes(
-                '<helicone-prompt-input key="outputBody" />'
+                '<helicone-prompt-input key="outputBody" />',
               ),
             };
           } else if (params.includedVariables) {
@@ -184,7 +185,12 @@ const EvaluatorDetail = () => {
             includedVariables: extractedIncludedVariables,
           });
         } catch (e) {
-          console.error("Error parsing template:", e);
+          logger.error(
+            {
+              error: e,
+            },
+            "Error parsing template",
+          );
           // Set defaults if parsing fails
           setEvaluatorFormValues({
             name: evaluator.name || "",
@@ -225,56 +231,6 @@ const EvaluatorDetail = () => {
     }
   }, [evaluators.data, id, router, notification]);
 
-  // Helper to add a new choice score
-  const addChoiceScore = () => {
-    if (!evaluatorFormValues) return;
-
-    const lastScore =
-      evaluatorFormValues.choiceScores.length > 0
-        ? evaluatorFormValues.choiceScores[
-            evaluatorFormValues.choiceScores.length - 1
-          ].score + 1
-        : 1;
-    setEvaluatorFormValues({
-      ...evaluatorFormValues,
-      choiceScores: [
-        ...evaluatorFormValues.choiceScores,
-        { score: lastScore, description: "" },
-      ],
-    });
-  };
-
-  // Helper to remove a choice score
-  const removeChoiceScore = (index: number) => {
-    if (!evaluatorFormValues) return;
-
-    setEvaluatorFormValues({
-      ...evaluatorFormValues,
-      choiceScores: evaluatorFormValues.choiceScores.filter(
-        (_: any, i: number) => i !== index
-      ),
-    });
-  };
-
-  // Helper to update a choice score
-  const updateChoiceScore = (
-    index: number,
-    field: "score" | "description",
-    value: string | number
-  ) => {
-    if (!evaluatorFormValues) return;
-
-    const newScores = [...evaluatorFormValues.choiceScores];
-    newScores[index] = {
-      ...newScores[index],
-      [field]: field === "score" ? Number(value) : value,
-    };
-    setEvaluatorFormValues({
-      ...evaluatorFormValues,
-      choiceScores: newScores,
-    });
-  };
-
   // Handle form submission
   const handleSubmit = async (data: any): Promise<void> => {
     try {
@@ -283,7 +239,12 @@ const EvaluatorDetail = () => {
         existingEvaluatorId: id as string,
       });
     } catch (error) {
-      console.error("Error updating evaluator:", error);
+      logger.error(
+        {
+          error,
+        },
+        "Error updating evaluator",
+      );
       notification.setNotification("Failed to update evaluator", "error");
     }
   };
@@ -302,8 +263,8 @@ const EvaluatorDetail = () => {
     >
       <div className="flex items-center gap-2">
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
         </span>
         <span>{onlineEvaluatorCount} Online</span>
       </div>
@@ -313,22 +274,22 @@ const EvaluatorDetail = () => {
 
   if (evaluators.isLoading || isLoading) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="mx-auto max-w-4xl p-6">
         <div className="space-y-6">
           <div className="animate-pulse space-y-4">
-            <div className="h-6 bg-muted rounded w-1/4"></div>
-            <div className="h-4 bg-muted rounded w-1/2"></div>
+            <div className="h-6 w-1/4 rounded bg-muted"></div>
+            <div className="h-4 w-1/2 rounded bg-muted"></div>
           </div>
           <Card className="w-full p-6">
             <div className="animate-pulse space-y-4">
-              <div className="h-6 bg-muted rounded w-1/4"></div>
-              <div className="h-24 bg-muted rounded w-full"></div>
+              <div className="h-6 w-1/4 rounded bg-muted"></div>
+              <div className="h-24 w-full rounded bg-muted"></div>
             </div>
           </Card>
           <Card className="w-full p-6">
             <div className="animate-pulse space-y-4">
-              <div className="h-6 bg-muted rounded w-1/4"></div>
-              <div className="h-12 bg-muted rounded w-full"></div>
+              <div className="h-6 w-1/4 rounded bg-muted"></div>
+              <div className="h-12 w-full rounded bg-muted"></div>
             </div>
           </Card>
         </div>
@@ -345,10 +306,10 @@ const EvaluatorDetail = () => {
           href: "/evaluators",
         }}
       />
-      <div className="p-6 pb-24 bg-background min-h-screen">
+      <div className="min-h-screen bg-background p-6 pb-24">
         {/* Evaluator name heading */}
-        <div className="mb-4 max-w-4xl mx-auto">
-          <div className="flex items-center justify-between w-full">
+        <div className="mx-auto mb-4 max-w-4xl">
+          <div className="flex w-full items-center justify-between">
             <div className="flex items-center gap-2">
               <H3>{name || "Unnamed Evaluator"}</H3>
             </div>
@@ -363,7 +324,7 @@ const EvaluatorDetail = () => {
                   } else {
                     notification.setNotification(
                       "Please save the evaluator first",
-                      "info"
+                      "info",
                     );
                   }
                 }}
@@ -386,7 +347,7 @@ const EvaluatorDetail = () => {
                     } else {
                       notification.setNotification(
                         "Please save the evaluator first",
-                        "info"
+                        "info",
                       );
                     }
                   }}

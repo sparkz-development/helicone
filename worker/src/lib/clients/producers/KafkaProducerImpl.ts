@@ -1,5 +1,4 @@
 import { Kafka } from "@upstash/kafka";
-import { Env } from "../../..";
 import { MessageData, MessageProducer } from "./types";
 import { err, ok, Result } from "../../util/results";
 
@@ -21,6 +20,10 @@ export class KafkaProducerImpl implements MessageProducer {
       username: env.UPSTASH_KAFKA_USERNAME,
       password: env.UPSTASH_KAFKA_PASSWORD,
     });
+  }
+
+  setLowerPriority() {
+    // Do nothing since this is deprecated to SQS
   }
 
   async sendMessage(msg: MessageData): Promise<Result<null, string>> {

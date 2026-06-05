@@ -1,14 +1,22 @@
-import { Env } from "../..";
-import { Database } from "../../../supabase/database.types";
+import { Database, Json } from "../../../supabase/database.types";
 import { RequestWrapper } from "../../lib/RequestWrapper";
 import { Job, isValidStatus, validateRun } from "../../lib/models/Runs";
 import { HeliconeNode, validateHeliconeNode } from "../../lib/models/Tasks";
 import { validateAlertCreate } from "../../lib/util/validators/alertValidators";
 
+import crypto from "crypto";
 import { OpenAPIRouterType } from "@cloudflare/itty-router-openapi";
 import { Route } from "itty-router";
 import { logAsync } from "../../lib/managers/AsyncLogManager";
 import { createAPIClient } from "../../api/lib/apiClient";
+import { createClient } from "@supabase/supabase-js";
+import { ProviderKeysManager } from "../../lib/managers/ProviderKeysManager";
+import { ProviderKey, ProviderKeysStore } from "../../lib/db/ProviderKeysStore";
+import { APIKeysStore } from "../../lib/db/APIKeysStore";
+import { APIKeysManager } from "../../lib/managers/APIKeysManager";
+import { ModelProviderName } from "@helicone-package/cost/models/providers";
+import { BaseOpenAPIRouter } from "../routerFactory";
+import { getWalletRouter } from "./walletRouter";
 
 function getAPIRouterV1(
   router: OpenAPIRouterType<
@@ -16,6 +24,189 @@ function getAPIRouterV1(
     [requestWrapper: RequestWrapper, env: Env, ctx: ExecutionContext]
   >
 ) {
+  router.post(
+    "/mock-set-api-key",
+    async (
+      _,
+      requestWrapper: RequestWrapper,
+      env: Env,
+      ctx: ExecutionContext
+    ) => {
+      if (env.ENVIRONMENT !== "development") {
+        return new Response("not allowed", { status: 403 });
+      }
+
+      const data = await requestWrapper.unsafeGetJson<{
+        apiKeyHash: string;
+        orgId: string;
+        softDelete?: boolean;
+      }>();
+
+      if (!data) {
+        return new Response("invalid request", { status: 400 });
+      }
+
+      const supabaseClientUS = createClient<Database>(
+        env.SUPABASE_URL,
+        env.SUPABASE_SERVICE_ROLE_KEY
+      );
+      const supabaseClientEU = createClient<Database>(
+        env.EU_SUPABASE_URL,
+        env.EU_SUPABASE_SERVICE_ROLE_KEY
+      );
+
+      const apiKeysManagerUS = new APIKeysManager(
+        new APIKeysStore(supabaseClientUS),
+        env
+      );
+      await apiKeysManagerUS.setAPIKey(
+        data.apiKeyHash,
+        data.orgId,
+        data.softDelete
+      );
+
+      const apiKeysManagerEU = new APIKeysManager(
+        new APIKeysStore(supabaseClientEU),
+        env
+      );
+      await apiKeysManagerEU.setAPIKey(
+        data.apiKeyHash,
+        data.orgId,
+        data.softDelete
+      );
+      return new Response("ok", { status: 200 });
+    }
+  );
+
+  router.post(
+    "/reset-prompt-cache/:orgId",
+    async (
+      { params: { orgId } },
+      requestWrapper: RequestWrapper,
+      env: Env,
+      ctx: ExecutionContext
+    ) => {
+      if (env.ENVIRONMENT !== "development") {
+        return new Response("not allowed", { status: 403 });
+      }
+
+      const data = await requestWrapper.unsafeGetJson<{
+        promptId: string;
+        versionId?: string;
+        environment?: string;
+      }>();
+
+      if (!data || !data.promptId) {
+        return new Response("promptId is required", { status: 400 });
+      }
+
+      try {
+        const { removeFromCache } = await import(
+          "../../lib/util/cache/secureCache"
+        );
+        const cacheKeysToDelete: string[] = [];
+
+        if (data.versionId) {
+          const promptBodyCacheKey = `prompt_body_${data.promptId}_${data.versionId}_${orgId}`;
+          cacheKeysToDelete.push(promptBodyCacheKey);
+
+          const promptVersionCacheKey = `prompt_version_${data.promptId}_version:${data.versionId}_${orgId}`;
+          cacheKeysToDelete.push(promptVersionCacheKey);
+        }
+
+        if (data.environment) {
+          const promptVersionCacheKey = `prompt_version_${data.promptId}_env:${data.environment}_${orgId}`;
+          cacheKeysToDelete.push(promptVersionCacheKey);
+        }
+
+        await Promise.all(
+          cacheKeysToDelete.map((key) => removeFromCache(key, env))
+        );
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            deletedKeys: cacheKeysToDelete,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      } catch (error) {
+        console.error("Error resetting prompt cache:", error);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          }),
+          {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+    }
+  );
+
+  router.post(
+    "/mock-set-provider-keys/:orgId",
+    async (
+      { params: { orgId } },
+      requestWrapper: RequestWrapper,
+      env: Env,
+      ctx: ExecutionContext
+    ) => {
+      if (env.ENVIRONMENT !== "development") {
+        return new Response("not allowed", { status: 403 });
+      }
+
+      const data = await requestWrapper.unsafeGetJson<
+        {
+          provider: ModelProviderName;
+          decryptedProviderKey: string;
+          decryptedProviderSecretKey: string;
+          authType: "key" | "session_token";
+          config: Json | null;
+          orgId: string;
+          softDelete?: boolean;
+          byokEnabled: boolean;
+        }[]
+      >();
+
+      const supabaseClientUS = createClient<Database>(
+        env.SUPABASE_URL,
+        env.SUPABASE_SERVICE_ROLE_KEY
+      );
+      const supabaseClientEU = createClient<Database>(
+        env.EU_SUPABASE_URL,
+        env.EU_SUPABASE_SERVICE_ROLE_KEY
+      );
+      const providerKeys: ProviderKey[] = data.map((providerKey) => ({
+        provider: providerKey.provider,
+        org_id: providerKey.orgId,
+        decrypted_provider_key: providerKey.decryptedProviderKey,
+        decrypted_provider_secret_key: providerKey.decryptedProviderSecretKey,
+        auth_type: providerKey.authType,
+        config: providerKey.config,
+        byok_enabled: providerKey.byokEnabled,
+      }));
+
+      const providerKeysManagerUS = new ProviderKeysManager(
+        new ProviderKeysStore(supabaseClientUS),
+        env
+      );
+      await providerKeysManagerUS.setOrgProviderKeys(orgId, providerKeys);
+
+      const providerKeysManagerEU = new ProviderKeysManager(
+        new ProviderKeysStore(supabaseClientEU),
+        env
+      );
+      await providerKeysManagerEU.setOrgProviderKeys(orgId, providerKeys);
+      return new Response("ok", { status: 200 });
+    }
+  );
+
   router.post(
     "/job",
     async (
@@ -29,7 +220,7 @@ function getAPIRouterV1(
       if (authParams.error !== null) {
         return client.response.unauthorized();
       }
-      const job = await requestWrapper.getJson<Job>();
+      const job = await requestWrapper.unsafeGetJson<Job>();
 
       if (!job) {
         return client.response.newError("Invalid run", 400);
@@ -87,7 +278,7 @@ function getAPIRouterV1(
       }
 
       const status =
-        (await requestWrapper.getJson<{ status: string }>()).status ?? "";
+        (await requestWrapper.unsafeGetJson<{ status: string }>()).status ?? "";
 
       if (!isValidStatus(status)) {
         return client.response.newError("Invalid status", 400);
@@ -116,7 +307,7 @@ function getAPIRouterV1(
         return client.response.unauthorized();
       }
 
-      const node = await requestWrapper.getJson<HeliconeNode>();
+      const node = await requestWrapper.unsafeGetJson<HeliconeNode>();
       if (!node) {
         return client.response.newError("Invalid task", 400);
       }
@@ -176,7 +367,7 @@ function getAPIRouterV1(
       }
 
       const status =
-        (await requestWrapper.getJson<{ status: string }>()).status ?? "";
+        (await requestWrapper.unsafeGetJson<{ status: string }>()).status ?? "";
 
       if (!isValidStatus(status)) {
         return client.response.newError("Invalid status", 400);
@@ -251,7 +442,7 @@ function getAPIRouterV1(
         value: string;
       }
 
-      const newProperty = await requestWrapper.getJson<Body>();
+      const newProperty = await requestWrapper.unsafeGetJson<Body>();
 
       const auth = await requestWrapper.auth();
 
@@ -311,9 +502,10 @@ function getAPIRouterV1(
         return client.response.unauthorized();
       }
 
-      const requestData = await requestWrapper.getJson<
-        Database["public"]["Tables"]["alert"]["Insert"]
-      >();
+      const requestData =
+        await requestWrapper.unsafeGetJson<
+          Database["public"]["Tables"]["alert"]["Insert"]
+        >();
 
       const alert = {
         ...requestData,
@@ -326,9 +518,8 @@ function getAPIRouterV1(
         return client.response.newError(validateError, 400);
       }
 
-      const { data: alertRow, error: alertError } = await client.db.insertAlert(
-        alert
-      );
+      const { data: alertRow, error: alertError } =
+        await client.db.insertAlert(alert);
 
       if (alertError || !alertRow) {
         return client.response.newError(alertError, 500);
@@ -366,87 +557,8 @@ function getAPIRouterV1(
     }
   );
 
-  router.post(
-    "/v1/organizations/:id/logo",
-    async (
-      _,
-      requestWrapper: RequestWrapper,
-      env: Env,
-      _ctx: ExecutionContext
-    ) => {
-      const { error: formDataErr, data: formData } =
-        await requestWrapper.getFormData();
-
-      if (formDataErr || !formData) {
-        return new Response("Expected a POST request with a logo file", {
-          status: 400,
-        });
-      }
-
-      const logoFile = formData.get("logo") as unknown;
-
-      if (!logoFile || !(logoFile instanceof File)) {
-        return new Response("Expected a POST request with a logo file", {
-          status: 400,
-        });
-      }
-
-      const client = await createAPIClient(env, _ctx, requestWrapper);
-      const { data: authParams, error: authParamsErr } =
-        await client.db.getAuthParams();
-
-      const orgId = authParams?.organizationId;
-
-      if (authParamsErr || !orgId) {
-        return client.response.unauthorized();
-      }
-
-      const logoId = crypto.randomUUID();
-      const logoUrl = `organization/${orgId}/logo/${logoId}`;
-
-      const { error: uploadErr } = await client.db.uploadLogo(
-        logoFile,
-        logoUrl,
-        orgId
-      );
-
-      if (uploadErr) {
-        return client.response.newError(uploadErr, 500);
-      }
-
-      return client.response.successJSON({ ok: "true" }, true);
-    }
-  );
-
-  router.get(
-    "/v1/organizations/:id/logo",
-    async (
-      _,
-      requestWrapper: RequestWrapper,
-      env: Env,
-      _ctx: ExecutionContext
-    ) => {
-      const client = await createAPIClient(env, _ctx, requestWrapper);
-      const { data: authParams, error: authParamsErr } =
-        await client.db.getAuthParams();
-
-      const orgId = authParams?.organizationId;
-
-      if (authParamsErr || !orgId) {
-        return client.response.unauthorized();
-      }
-
-      const { data: logoPath, error: logoPathErr } =
-        await client.db.getLogoPath(orgId);
-
-      if (logoPathErr || !logoPath) {
-        return client.response.newError("Logo not found", 404);
-      }
-
-      const logoUrl = `${env.SUPABASE_URL}/storage/v1/object/public/organization_assets/${logoPath}`;
-      return client.response.successJSON({ logoUrl: logoUrl }, true);
-    }
-  );
+  // Register wallet endpoints
+  getWalletRouter(router);
 
   router.options(
     "*",
@@ -466,14 +578,10 @@ function getAPIRouterV1(
       });
     }
   );
+  // Note: catch-all route is handled at the router level in getAPIRouter()
 }
 
-export const getAPIRouter = (
-  router: OpenAPIRouterType<
-    Route,
-    [requestWrapper: RequestWrapper, env: Env, ctx: ExecutionContext]
-  >
-) => {
+export const getAPIRouter = (router: BaseOpenAPIRouter) => {
   getAPIRouterV1(router);
 
   // Proxy only + proxy forwarder
@@ -485,7 +593,7 @@ export const getAPIRouter = (
       _env: Env,
       _ctx: ExecutionContext
     ) => {
-      return new Response("invalid path", { status: 400 });
+      return new Response("invalid path", { status: 404 });
     }
   );
 

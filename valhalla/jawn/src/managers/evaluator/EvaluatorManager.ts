@@ -261,7 +261,9 @@ export class EvaluatorManager extends BaseManager {
           prompt_cache_write_tokens: null,
           prompt_cache_read_tokens: null,
           completion_tokens: null,
+          reasoning_tokens: null,
           prompt_id: null,
+          prompt_version: null, // SEE NOTE IN jawn/.../HandlerContext.ts
           llmSchema: null,
           country_code: null,
           asset_ids: null,
@@ -276,6 +278,8 @@ export class EvaluatorManager extends BaseManager {
           completion_audio_tokens: null,
           cache_enabled: false,
           cache_reference_id: null,
+          cost: null,
+          ai_gateway_body_mapping: null,
         },
       });
       if (scoreResult.error) {
@@ -332,18 +336,16 @@ export class EvaluatorManager extends BaseManager {
     experimentId: string
   ): Promise<Result<null, string>> {
     const experimentManager = new ExperimentV2Manager(this.authParams);
-    const experiment = await experimentManager.hasAccessToExperiment(
-      experimentId
-    );
+    const experiment =
+      await experimentManager.hasAccessToExperiment(experimentId);
     if (!experiment) {
       return err("Unauthorized");
     }
 
     const evaluators = await this.getEvaluatorsForExperiment(experimentId);
 
-    const experimentData = await experimentManager.getExperimentOutputForScores(
-      experimentId
-    );
+    const experimentData =
+      await experimentManager.getExperimentOutputForScores(experimentId);
 
     if (experimentData.error) {
       return err(experimentData.error);
@@ -381,18 +383,16 @@ export class EvaluatorManager extends BaseManager {
     experimentId: string
   ): Promise<Result<boolean, string>> {
     const experimentManager = new ExperimentV2Manager(this.authParams);
-    const experiment = await experimentManager.hasAccessToExperiment(
-      experimentId
-    );
+    const experiment =
+      await experimentManager.hasAccessToExperiment(experimentId);
     if (!experiment) {
       return err("Unauthorized");
     }
 
     const evaluators = await this.getEvaluatorsForExperiment(experimentId);
 
-    const experimentData = await experimentManager.getExperimentOutputForScores(
-      experimentId
-    );
+    const experimentData =
+      await experimentManager.getExperimentOutputForScores(experimentId);
 
     if (experimentData.error) {
       return err(experimentData.error);
@@ -419,9 +419,8 @@ export class EvaluatorManager extends BaseManager {
     evaluatorId: string
   ): Promise<Result<null, string>> {
     const experimentManager = new ExperimentV2Manager(this.authParams);
-    const experiment = await experimentManager.hasAccessToExperiment(
-      experimentId
-    );
+    const experiment =
+      await experimentManager.hasAccessToExperiment(experimentId);
     if (!experiment) {
       return err("Unauthorized");
     }
@@ -438,9 +437,8 @@ export class EvaluatorManager extends BaseManager {
     experimentId: string
   ): Promise<Result<EvaluatorResult[], string>> {
     const experimentManager = new ExperimentV2Manager(this.authParams);
-    const experiment = await experimentManager.hasAccessToExperiment(
-      experimentId
-    );
+    const experiment =
+      await experimentManager.hasAccessToExperiment(experimentId);
     if (!experiment) {
       return err("Unauthorized");
     }
@@ -472,9 +470,8 @@ export class EvaluatorManager extends BaseManager {
     evaluatorId: string
   ): Promise<Result<null, string>> {
     const experimentManager = new ExperimentV2Manager(this.authParams);
-    const experiment = await experimentManager.hasAccessToExperiment(
-      experimentId
-    );
+    const experiment =
+      await experimentManager.hasAccessToExperiment(experimentId);
     if (!experiment) {
       return err("Unauthorized");
     }

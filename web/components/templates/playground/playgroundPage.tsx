@@ -1,557 +1,1314 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { TooltipLegacy as Tooltip } from "@/components/ui/tooltipLegacy";
 import {
-  CodeBracketSquareIcon,
-  InformationCircleIcon,
-} from "@heroicons/react/24/outline";
-import { MultiSelect, MultiSelectItem } from "@tremor/react";
-import Image from "next/image";
-import { ChatCompletionTool } from "openai/resources";
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { generateStream } from "@/lib/api/llm/generate-stream";
+import { processStream } from "@/lib/api/llm/process-stream";
+import { useGetRequestWithBodies } from "@/services/hooks/requests";
+import { useModelRegistry } from "@/services/hooks/useModelRegistry";
+import { openAIMessageToHeliconeMessage } from "@helicone-package/llm-mapper/mappers/openai/chat";
 import {
-  Dispatch,
-  SetStateAction,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  openaiChatMapper,
+  OpenAIChatRequest,
+} from "@helicone-package/llm-mapper/mappers/openai/chat-v2";
 import {
-  playgroundModels as PLAYGROUND_MODELS,
-  playgroundModels,
-} from "@helicone-package/cost/providers/mappings";
-import { useDebounce } from "../../../services/hooks/debounce";
-import { usePlaygroundPage } from "../../../services/hooks/playground";
-import AuthHeader from "../../shared/authHeader";
-import { clsx } from "../../shared/clsx";
+  MappedLLMRequest,
+  Provider,
+  Tool,
+} from "@helicone-package/llm-mapper/types";
+import { heliconeRequestToMappedContent } from "@helicone-package/llm-mapper/utils/getMappedContent";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/router";
+import { v4 as uuidv4 } from "uuid";
 import useNotification from "../../shared/notification/useNotification";
-import ThemedModal from "../../shared/themed/themedModal";
-import ChatPlayground from "./chatPlayground";
-import FunctionButton from "./functionButton";
-
-import { useOrg } from "@/components/layout/org/organizationContext";
-import { FeatureUpgradeCard } from "@/components/shared/helicone/FeatureUpgradeCard";
-import { IslandContainer } from "@/components/ui/islandContainer";
-import { Slider } from "@/components/ui/slider";
+import PlaygroundMessagesPanel from "./components/PlaygroundMessagesPanel";
+import PlaygroundResponsePanel from "./components/PlaygroundResponsePanel";
+import PlaygroundVariablesPanel from "./components/PlaygroundVariablesPanel";
+import FoldedHeader from "@/components/shared/FoldedHeader";
+import { Small } from "@/components/ui/typography";
+import { ModelParameters } from "@/lib/api/llm/generate";
 import {
-  requestOptionsFromOpenAI,
-  usePlaygroundRuntime,
-} from "@assistant-ui/react-playground";
-import { useQuery } from "@tanstack/react-query";
-import { TestTubeDiagonal } from "lucide-react";
-import "prismjs";
-import "prismjs/components/prism-json";
-import "prismjs/themes/prism.css";
-import { useLocalStorage } from "../../../services/hooks/localStorage";
-import { PlaygroundModel } from "./types";
+  useCreatePrompt,
+  usePushPromptVersion,
+  useGetPromptVersion,
+  useGetPromptInputs,
+} from "@/services/hooks/prompts";
+import { $JAWN_API } from "@/lib/clients/jawn";
+import LoadingAnimation from "@/components/shared/loadingAnimation";
+
+import { HeliconeTemplateManager } from "@helicone-package/prompts/templates";
+import {
+  TemplateVariable,
+  PromptPartialVariable,
+} from "@helicone-package/prompts/types";
+import { Message } from "@helicone-package/llm-mapper/types";
+import { useVariableColorMapStore } from "@/store/features/playground/variableColorMap";
+import { ResponseFormat, ResponseFormatType, VariableInput } from "./types";
+import { useLocalStorage } from "@/services/hooks/localStorage";
+import Link from "next/link";
+import EnvironmentPill from "@/components/templates/prompts2025/EnvironmentPill";
+import PromptVersionPill from "@/components/templates/prompts2025/PromptVersionPill";
+import { useHeliconeAgent } from "@/components/templates/agent/HeliconeAgentContext";
+
+export const DEFAULT_EMPTY_CHAT: MappedLLMRequest = {
+  _type: "openai-chat",
+  id: "",
+  preview: {
+    request:
+      "You are a helpful AI assistant.\n\nYou are speaking to {{ hc:name:string }}",
+    response: "",
+    concatenatedMessages: [
+      {
+        _type: "message",
+        role: "system",
+        content:
+          "You are a helpful AI assistant.\n\nYou are speaking to {{ hc:name:string }}",
+      },
+    ],
+  },
+  model: "gpt-4o-mini",
+  raw: {
+    request: {},
+    response: {},
+  },
+  heliconeMetadata: {
+    requestId: "",
+    path: "",
+    countryCode: null,
+    cacheEnabled: false,
+    cacheReferenceId: null,
+    createdAt: new Date().toISOString(),
+    totalTokens: null,
+    promptTokens: null,
+    completionTokens: null,
+    reasoningTokens: null,
+    latency: null,
+    user: null,
+    status: {
+      code: 200,
+      statusType: "success",
+    },
+    customProperties: null,
+    cost: null,
+    feedback: {
+      createdAt: null,
+      id: null,
+      rating: null,
+    },
+    provider: "OPENAI" as Provider,
+    promptCacheWriteTokens: 0,
+    promptCacheReadTokens: 0,
+  },
+  schema: {
+    request: {
+      messages: [
+        {
+          _type: "message",
+          role: "system",
+          content:
+            "You are a helpful AI assistant.\n\nYou are speaking to {{ hc:name:string }}",
+        },
+      ],
+      tool_choice: undefined,
+      model: "gpt-4o",
+      temperature: undefined,
+      tools: undefined,
+      response_format: { type: "text" },
+      max_tokens: undefined,
+      top_p: undefined,
+      frequency_penalty: undefined,
+      presence_penalty: undefined,
+      stop: [],
+      reasoning_effort: undefined,
+      verbosity: undefined,
+    },
+  },
+};
+
+const convertMappedLLMRequestToOpenAIChatRequest = (
+  mappedContent: MappedLLMRequest,
+  tools: Tool[],
+  modelParameters: ModelParameters,
+  selectedModel: string,
+  responseFormat: ResponseFormat,
+): OpenAIChatRequest => {
+  const openaiRequest = openaiChatMapper.toExternal({
+    ...mappedContent.schema.request,
+    tools: tools && tools.length > 0 ? tools : undefined,
+  } as any);
+
+  const promptBody = {
+    ...openaiRequest,
+    ...Object.fromEntries(
+      Object.entries(modelParameters).map(([key, value]) => [
+        key,
+        value === null ? undefined : value,
+      ]),
+    ),
+    model: selectedModel,
+    response_format:
+      responseFormat?.type === "json_schema"
+        ? {
+            type: "json_schema",
+            json_schema: responseFormat.json_schema,
+          }
+        : undefined,
+  };
+
+  return promptBody;
+};
+
+const convertOpenAIChatRequestToMappedLLMRequest = (
+  openaiRequest: OpenAIChatRequest,
+): MappedLLMRequest => {
+  const internalRequest = openaiChatMapper.toInternal(openaiRequest);
+
+  return {
+    _type: "openai-chat",
+    id: "",
+    preview: {
+      request: internalRequest.messages?.[0]?.content ?? "",
+      response: "",
+      concatenatedMessages: internalRequest.messages || [],
+    },
+    model: openaiRequest.model || "gpt-4o-mini",
+    raw: {
+      request: openaiRequest,
+      response: {},
+    },
+    heliconeMetadata: {
+      requestId: "",
+      path: "",
+      countryCode: null,
+      cacheEnabled: false,
+      cacheReferenceId: null,
+      createdAt: new Date().toISOString(),
+      totalTokens: null,
+      promptTokens: null,
+      completionTokens: null,
+      reasoningTokens: null,
+      latency: null,
+      user: null,
+      status: {
+        code: 200,
+        statusType: "success",
+      },
+      customProperties: null,
+      cost: null,
+      feedback: {
+        createdAt: null,
+        id: null,
+        rating: null,
+      },
+      provider: "OPENAI" as Provider,
+      promptCacheWriteTokens: 0,
+      promptCacheReadTokens: 0,
+    },
+    schema: {
+      request: {
+        ...internalRequest,
+        messages:
+          internalRequest.messages?.map((message) => ({
+            ...message,
+            id: uuidv4(),
+          })) ?? [],
+      },
+    },
+  };
+};
 
 const PlaygroundPage = (props: PlaygroundPageProps) => {
-  const { request } = props;
-  const [requestId, setRequestId] = useState<string | undefined>(request ?? "");
+  const { setToolHandler } = useHeliconeAgent();
+  const { requestId, promptVersionId, createPrompt } = props;
+  const { setNotification } = useNotification();
+  const router = useRouter();
+  const { initializeColorMap } = useVariableColorMapStore();
 
-  const [open, setOpen] = useState<boolean>(false);
-  const [infoOpen, setInfoOpen] = useState<boolean>(false);
+  // Model registry for validating supported models
+  const { data: playgroundModels, isLoading: modelsLoading } =
+    useModelRegistry();
 
-  const debouncedRequestId: string | undefined = useDebounce(requestId, 500);
+  // Track unsupported model warning
+  const [unsupportedModelWarning, setUnsupportedModelWarning] = useState<{
+    originalModel: string;
+    fallbackModel: string;
+  } | null>(null);
 
-  const { data, isLoading, chat, hasData, isChat, tools } = usePlaygroundPage(
-    debouncedRequestId || ""
+  useEffect(() => {
+    if (requestId && promptVersionId) {
+      setNotification(
+        "Cannot load request and prompt at the same time.",
+        "error",
+      );
+      router.push("/playground");
+      return;
+    }
+  }, [requestId, promptVersionId, setNotification, router]);
+
+  const { data: requestData, isLoading: isRequestLoading } =
+    useGetRequestWithBodies(requestId ?? "");
+
+  const requestPromptId = useMemo(
+    () => requestData?.data?.prompt_id ?? null,
+    [requestData?.data?.prompt_id],
+  );
+  const requestPromptVersionId = useMemo(
+    () => requestData?.data?.prompt_version ?? null,
+    [requestData?.data?.prompt_version],
   );
 
-  const [currentTools, setCurrentTools] = useState<ChatCompletionTool[]>();
-  const [providerAPIKey, setProviderAPIKey] = useState<string>();
+  const { data: promptVersionData, isLoading: isPromptVersionLoading } =
+    useGetPromptVersion(promptVersionId || requestPromptVersionId || undefined);
 
-  const fineTuneModels = useFineTuneModels(providerAPIKey);
-
-  const playgroundModels = useMemo(() => {
-    return PLAYGROUND_MODELS.filter((model) => model.provider !== "AZURE")
-      .concat(fineTuneModels.data || [])
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [fineTuneModels.data]);
-
-  const singleRequest = data.length > 0 ? data[0] : null;
-  const singleModel = useMemo(
-    () => playgroundModels.find((model) => model.name === singleRequest?.model),
-    [singleRequest?.model, playgroundModels]
+  const promptInputsQuery = useGetPromptInputs(
+    requestPromptId || "",
+    requestPromptVersionId || "",
+    requestId || "",
   );
 
-  const reqBody =
-    singleRequest !== null ? (singleRequest.raw.request as any) : null;
+  const [selectedModel, setSelectedModel] = useState<string>("gpt-4o-mini");
 
-  const [temperature, setTemperature] = useState<number>(
-    reqBody !== null ? reqBody.temperature : 0.7
+  // Track the original model from request/prompt before validation
+  const [originalModelFromData, setOriginalModelFromData] = useState<
+    string | null
+  >(null);
+
+  // Default fallback model
+  const DEFAULT_FALLBACK_MODEL = "gpt-4o-mini";
+
+  // Effect to validate model when registry loads or original model changes
+  useEffect(() => {
+    if (modelsLoading || !playgroundModels || playgroundModels.length === 0) {
+      return;
+    }
+
+    // If we have an original model from data that needs validation
+    if (originalModelFromData) {
+      const isModelSupported = playgroundModels.some(
+        (m) => m.id === originalModelFromData,
+      );
+
+      if (!isModelSupported) {
+        setUnsupportedModelWarning({
+          originalModel: originalModelFromData,
+          fallbackModel: DEFAULT_FALLBACK_MODEL,
+        });
+        setSelectedModel(DEFAULT_FALLBACK_MODEL);
+      } else {
+        setUnsupportedModelWarning(null);
+        setSelectedModel(originalModelFromData);
+      }
+      // Clear the original model after processing
+      setOriginalModelFromData(null);
+    }
+  }, [modelsLoading, playgroundModels, originalModelFromData]);
+
+  const [defaultContent, setDefaultContent] = useState<MappedLLMRequest | null>(
+    null,
   );
-  const [maxTokens, setMaxTokens] = useState<number>(
-    reqBody !== null ? reqBody.max_tokens : 256
+
+  const [mappedContent, setMappedContent] = useState<MappedLLMRequest | null>(
+    null,
   );
 
-  const [selectedModels, setSelectedModels] = useState<PlaygroundModel[]>([]);
+  useEffect(() => {
+    setToolHandler("playground-get_messages", () => {
+      return {
+        success: true,
+        message: JSON.stringify(mappedContent?.schema.request.messages ?? []),
+      };
+    });
 
-  const org = useOrg();
-  const hasAccess = useMemo(() => {
-    return org?.currentOrg?.tier != "free";
-  }, [org?.currentOrg?.tier]);
+    setToolHandler(
+      "playground-edit_messages",
+      async (args: { messages: Message[] }) => {
+        if (!mappedContent) {
+          return {
+            success: false,
+            message: "No mapped content available",
+          };
+        }
+
+        try {
+          if (!Array.isArray(args.messages)) {
+            return {
+              success: false,
+              message: "Messages must be an array",
+            };
+          }
+
+          const processedMessages = args.messages.map((message, index) => {
+            const processedMessage = { ...message };
+            processedMessage.id = `msg-${uuidv4()}`;
+
+            if (
+              processedMessage._type === "message" &&
+              !processedMessage.role
+            ) {
+              processedMessage.role = index === 0 ? "system" : "user";
+            }
+
+            return processedMessage;
+          });
+
+          const updatedMappedContent = {
+            ...mappedContent,
+            schema: {
+              ...mappedContent.schema,
+              request: {
+                ...mappedContent.schema.request,
+                messages: processedMessages,
+              },
+            },
+          };
+
+          setMappedContent(updatedMappedContent);
+
+          return {
+            success: true,
+            message: `Successfully updated ${processedMessages.length} messages`,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            message: `Error updating messages: ${error instanceof Error ? error.message : "Unknown error"}`,
+          };
+        }
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mappedContent]);
+
+  useEffect(() => {
+    if (!requestId && !promptVersionId) {
+      setMappedContent(DEFAULT_EMPTY_CHAT);
+      setDefaultContent(DEFAULT_EMPTY_CHAT);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId, promptVersionId]);
 
   useEffect(() => {
     if (
-      singleModel &&
-      !selectedModels.some((model) => model.name === singleModel.name)
+      promptVersionData &&
+      promptVersionData.promptBody &&
+      !isPromptVersionLoading
     ) {
-      setSelectedModels((prev) => [...prev, singleModel]);
-    }
-  }, [singleModel]);
+      const convertedContent = convertOpenAIChatRequestToMappedLLMRequest(
+        promptVersionData.promptBody,
+      );
 
-  const { setNotification } = useNotification();
-
-  useEffect(() => {
-    const newTools = tools ?? [];
-    setCurrentTools((prevTools) => {
-      if (
-        prevTools !== undefined &&
-        JSON.stringify(prevTools) === JSON.stringify(newTools)
-      ) {
-        return prevTools;
+      const model = promptVersionData.promptBody.model;
+      // Store original model for validation when registry loads
+      if (model) {
+        setOriginalModelFromData(model);
       }
-      return newTools;
-    });
-  }, [tools]);
 
-  const [newPlaygroundOpen, setNewPlaygroundOpen] = useLocalStorage<boolean>(
-    "newPlaygroundOpen",
-    false
-  );
+      setMappedContent(convertedContent);
+      setDefaultContent(convertedContent);
+      setTools(convertedContent.schema.request.tools ?? []);
 
-  const transformedMessages: any[] = useMemo(() => {
-    if (!chat.length) return [];
+      setModelParameters({
+        temperature: promptVersionData.promptBody.temperature,
+        max_tokens: promptVersionData.promptBody.max_tokens,
+        top_p: promptVersionData.promptBody.top_p,
+        frequency_penalty: promptVersionData.promptBody.frequency_penalty,
+        presence_penalty: promptVersionData.promptBody.presence_penalty,
+        stop: promptVersionData.promptBody.stop
+          ? Array.isArray(promptVersionData.promptBody.stop)
+            ? promptVersionData.promptBody.stop.join(",")
+            : promptVersionData.promptBody.stop
+          : undefined,
+        reasoning_effort: promptVersionData.promptBody.reasoning_effort,
+        verbosity: promptVersionData.promptBody.verbosity,
+      });
 
-    return selectedModels?.[0]?.provider === "OPENAI"
-      ? requestOptionsFromOpenAI({
-          model: selectedModels?.[0]?.name || "gpt-3.5-turbo",
-          messages: chat as any,
-          tools: currentTools,
-        }).messages
-      : chat.map((msg) => ({
-          role: msg.role as "user" | "assistant" | "system",
-          content:
-            typeof msg.content === "string"
-              ? [{ type: "text" as const, text: msg.content }]
-              : msg.content,
-        }));
-  }, [chat, selectedModels, currentTools]);
+      const storedResponseFormat = convertedContent?.schema.request
+        .response_format as ResponseFormat;
+      if (storedResponseFormat) {
+        setResponseFormat({
+          type: "json_schema" as ResponseFormatType,
+          json_schema: storedResponseFormat.json_schema,
+        });
+      }
+    }
+  }, [promptVersionData, isPromptVersionLoading]);
 
-  const modelName: string = useMemo(
-    () => selectedModels?.[0]?.name || "gpt-3.5-turbo",
-    [selectedModels]
-  );
+  const [tools, setTools] = useState<Tool[]>([]);
 
-  const runtime = usePlaygroundRuntime({
-    api: "/api/aui",
-    initialMessages: [] as any,
+  const [modelParameters, setModelParameters] = useState<ModelParameters>({
+    temperature: undefined,
+    max_tokens: undefined,
+    top_p: undefined,
+    frequency_penalty: undefined,
+    presence_penalty: undefined,
+    stop: undefined,
+    reasoning_effort: undefined,
+    verbosity: undefined,
   });
 
-  // Keep a stable reference to runtime
-  const runtimeRef = useRef(runtime);
+  const [responseFormat, setResponseFormat] = useState<ResponseFormat>({
+    type: "text",
+    json_schema: undefined,
+  });
+
+  const [templateVariables, setTemplateVariables] = useState<
+    Map<string, TemplateVariable>
+  >(new Map());
+  const [promptBodyCache, setPromptBodyCache] = useState<
+    Map<string, OpenAIChatRequest>
+  >(new Map());
+  const [variableInputs, setVariableInputs] = useLocalStorage<
+    Record<string, VariableInput>
+  >("variableInputs", {});
+  const [promptPartialInputs, setPromptPartialInputs] = useLocalStorage<
+    Record<string, string>
+  >("promptPartialInputs", {});
+
+  // Initial check for if we are loading a request that is associated with a prompt
+  // then we should be editing that prompt instead.
   useEffect(() => {
-    runtimeRef.current = runtime;
-  }, [runtime]);
-
-  // Before the useEffect for runtime, add a ref to hold previous messages
-  const prevTransformedMessagesRef = useRef<any[]>([]);
-
-  useEffect(() => {
-    if (!debouncedRequestId || !transformedMessages.length) return;
-    // For non-OPENAI providers (like Anthropics), skip updating the runtime to prevent rerenders
-    if (selectedModels?.[0]?.provider !== "OPENAI") return;
-
     if (
-      JSON.stringify(prevTransformedMessagesRef.current) !==
-      JSON.stringify(transformedMessages)
+      requestId &&
+      requestData?.data &&
+      !isRequestLoading &&
+      requestPromptVersionId &&
+      !promptInputsQuery.isLoading
     ) {
-      prevTransformedMessagesRef.current = transformedMessages;
-      runtimeRef.current.thread.setRequestData({
-        modelName,
-        messages: transformedMessages,
-      } as any);
+      if (promptInputsQuery.data) {
+        const convertedInputs: Record<string, VariableInput> = {};
+        for (const [key, value] of Object.entries(
+          promptInputsQuery.data.inputs,
+        )) {
+          convertedInputs[key] = {
+            isObject: typeof value === "object" && value !== null,
+            value:
+              typeof value === "object" && value !== null
+                ? JSON.stringify(value)
+                : String(value),
+          };
+        }
+
+        setVariableInputs(convertedInputs);
+      }
+
+      router.push(`/playground?promptVersionId=${requestPromptVersionId}`);
     }
-  }, [debouncedRequestId, transformedMessages, modelName, selectedModels]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    requestId,
+    requestData,
+    isRequestLoading,
+    requestPromptVersionId,
+    promptInputsQuery.data,
+    promptInputsQuery.isLoading,
+    router,
+  ]);
 
-  console.log("rerender");
+  useMemo(() => {
+    if (!requestId) {
+      setTools([]);
+      setModelParameters({
+        temperature: undefined,
+        max_tokens: undefined,
+        top_p: undefined,
+        frequency_penalty: undefined,
+        presence_penalty: undefined,
+        stop: undefined,
+        reasoning_effort: undefined,
+        verbosity: undefined,
+      });
+      setMappedContent(DEFAULT_EMPTY_CHAT);
+      setDefaultContent(DEFAULT_EMPTY_CHAT);
+      return;
+    }
+    if (requestData?.data && !isRequestLoading && !requestPromptVersionId) {
+      const model = requestData.data.model;
+      // Store original model for validation when registry loads
+      if (model) {
+        setOriginalModelFromData(model);
+      }
 
-  return !hasAccess ? (
-    <div className="flex justify-center items-center bg-white">
-      <FeatureUpgradeCard
-        title="Playground"
-        featureName="Playground"
-        headerTagline="Test and iterate on LLM prompts"
-        icon={<TestTubeDiagonal className="w-4 h-4 text-sky-500" />}
-        featureImage={{
-          type: "image",
-          content: "/static/featureUpgrade/playground-preview.webp",
-        }}
-      />
-    </div>
-  ) : (
-    <IslandContainer>
-      <AuthHeader
-        isWithinIsland
-        title={"Playground"}
-        actions={
-          <div id="toolbar" className="flex flex-row items-center gap-2 w-full">
-            <div className="max-w-sm w-[22rem]">
-              <Input
-                id="request-id"
-                name="request-id"
-                onChange={(e) => setRequestId(e.target.value)}
-                value={requestId}
-                placeholder="Enter in a Request ID"
-                className="w-full"
-              />
-            </div>
+      const content = heliconeRequestToMappedContent(requestData.data);
+      let contentWithIds = {
+        ...content,
+        schema: {
+          ...content.schema,
+          request: {
+            ...content.schema.request,
+            messages:
+              content.schema.request.messages?.map((message) => ({
+                ...message,
+                id: uuidv4(),
+              })) ?? [],
+          },
+        },
+      };
+      if (!mappedContent) {
+        // nothing in local storage
+        setMappedContent(contentWithIds);
+        setTools(contentWithIds?.schema.request.tools ?? []);
+        setModelParameters({
+          temperature: contentWithIds.schema.request.temperature,
+          max_tokens: contentWithIds.schema.request.max_tokens,
+          top_p: contentWithIds.schema.request.top_p,
+          frequency_penalty: contentWithIds.schema.request.frequency_penalty,
+          presence_penalty: contentWithIds.schema.request.presence_penalty,
+          stop: contentWithIds.schema.request.stop
+            ? Array.isArray(contentWithIds.schema.request.stop)
+              ? contentWithIds.schema.request.stop.join(",")
+              : contentWithIds.schema.request.stop
+            : undefined,
+          reasoning_effort: contentWithIds.schema.request.reasoning_effort,
+          verbosity: contentWithIds.schema.request.verbosity,
+        });
+      } else {
+        setTools(mappedContent?.schema.request.tools ?? []);
+        setModelParameters({
+          temperature: mappedContent?.schema.request.temperature,
+          max_tokens: mappedContent?.schema.request.max_tokens,
+          top_p: mappedContent?.schema.request.top_p,
+          frequency_penalty: mappedContent?.schema.request.frequency_penalty,
+          presence_penalty: mappedContent?.schema.request.presence_penalty,
+          stop: mappedContent?.schema.request.stop
+            ? Array.isArray(mappedContent?.schema.request.stop)
+              ? mappedContent?.schema.request.stop.join(",")
+              : mappedContent?.schema.request.stop
+            : undefined,
+          reasoning_effort: mappedContent?.schema.request.reasoning_effort,
+          verbosity: mappedContent?.schema.request.verbosity,
+        });
+        setSelectedModel(mappedContent.model);
+      }
+      setDefaultContent(contentWithIds);
 
-            <button
-              disabled={singleRequest === null}
-              onClick={() => {
-                if (singleRequest === null) {
-                  setNotification("Invalid Request", "error");
-                  return;
+      return mappedContent;
+    }
+    return DEFAULT_EMPTY_CHAT;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId, requestData, isRequestLoading, requestPromptVersionId]);
+
+  const [response, setResponse] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+  const abortController = useRef<AbortController | null>(null);
+  const [isStreaming, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (response) {
+      const parsedResponse = JSON.parse(response);
+      const newMessageMappedResponse =
+        openAIMessageToHeliconeMessage(parsedResponse);
+      if (!mappedContent) {
+        return;
+      }
+      // TODO: be able to remove the @ts-ignore
+      // @ts-ignore
+      setMappedContent((prev: MappedLLMRequest) => ({
+        ...prev,
+        raw: {
+          ...prev.raw,
+          response: {
+            ...prev.raw.response,
+            messages: [parsedResponse],
+          },
+        },
+        schema: {
+          ...prev.schema,
+          response: {
+            ...(prev.schema.response ?? {}),
+            messages: [newMessageMappedResponse],
+          },
+        },
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [response]);
+
+  const createPromptMutation = useCreatePrompt();
+  const pushPromptVersionMutation = usePushPromptVersion();
+
+  const onCreatePrompt = async (tags: string[], promptName: string) => {
+    if (!mappedContent) {
+      setNotification("No mapped content", "error");
+      return;
+    }
+    const promptBody = convertMappedLLMRequestToOpenAIChatRequest(
+      mappedContent,
+      tools,
+      modelParameters,
+      selectedModel,
+      responseFormat,
+    );
+    try {
+      const result = await createPromptMutation.mutateAsync({
+        body: {
+          name: promptName,
+          tags: tags,
+          promptBody: promptBody as OpenAIChatRequest,
+        },
+      });
+
+      if (result.data?.versionId) {
+        router.push(`/playground?promptVersionId=${result.data.versionId}`);
+        setNotification(`Prompt created successfully!`, "success");
+      }
+    } catch (error) {
+      console.error("Failed to save prompt:", error);
+      setNotification("Failed to save prompt", "error");
+    }
+  };
+
+  const onSavePrompt = async (
+    newMajorVersion: boolean,
+    environment: string | undefined,
+    commitMessage: string,
+  ) => {
+    if (!mappedContent) {
+      setNotification("No mapped content", "error");
+      return;
+    }
+
+    if (!promptVersionData?.promptVersion || !promptVersionData?.prompt) {
+      setNotification("No prompt version data available", "error");
+      return;
+    }
+
+    const promptBody = convertMappedLLMRequestToOpenAIChatRequest(
+      mappedContent,
+      tools,
+      modelParameters,
+      selectedModel,
+      responseFormat,
+    );
+
+    try {
+      const result = await pushPromptVersionMutation.mutateAsync({
+        body: {
+          promptId: promptVersionData.prompt.id,
+          promptVersionId: promptVersionData.promptVersion.id,
+          newMajorVersion,
+          environment,
+          commitMessage,
+          promptBody,
+        },
+      });
+
+      if (result.data?.id) {
+        router.push(`/playground?promptVersionId=${result.data.id}`);
+
+        setNotification(`Prompt version saved successfully!`, "success");
+      }
+    } catch (error) {
+      console.error("Failed to save prompt version:", error);
+      setNotification("Failed to save prompt version", "error");
+    }
+  };
+
+  // Watch changes to mappedContent, to update template variables and prompt partials
+  useEffect(() => {
+    const allVariables = new Map<string, TemplateVariable>();
+    const allPromptPartials: PromptPartialVariable[] = [];
+    const seenPartials = new Set<string>();
+
+    const processContent = (content: string) => {
+      const variables = HeliconeTemplateManager.extractVariables(content);
+      variables.forEach((variable: TemplateVariable) =>
+        allVariables.set(variable.name, variable),
+      );
+
+      // Also extract prompt partials
+      const partials =
+        HeliconeTemplateManager.extractPromptPartialVariables(content);
+      partials.forEach((partial) => {
+        if (!seenPartials.has(partial.raw)) {
+          seenPartials.add(partial.raw);
+          allPromptPartials.push(partial);
+        }
+      });
+
+      return variables;
+    };
+
+    if (mappedContent) {
+      const messages = mappedContent.schema.request.messages;
+      if (messages) {
+        for (const message of messages) {
+          if (message._type === "contentArray" && message.contentArray) {
+            message.contentArray.forEach((item) => {
+              if (item._type === "message" && item.content) {
+                processContent(item.content);
+              }
+            });
+          } else if (message.content) {
+            processContent(message.content);
+          }
+        }
+      }
+
+      const responseFormat = mappedContent.schema.request.response_format;
+      if (responseFormat && responseFormat.type === "json_schema") {
+        if (responseFormat.json_schema) {
+          const jsonSchemaString = JSON.stringify(responseFormat.json_schema);
+          processContent(jsonSchemaString);
+        }
+      }
+
+      const tools = mappedContent.schema.request.tools;
+      if (tools) {
+        const toolsString = JSON.stringify(tools);
+        processContent(toolsString);
+      }
+    }
+
+    setTemplateVariables(allVariables);
+
+    // Fetch prompt bodies for partials and extract variables from specific message indices
+    const fetchPartialVariables = async () => {
+      const partialVariablesMap = new Map<string, TemplateVariable>();
+      const newCacheEntries = new Map<string, OpenAIChatRequest>();
+
+      for (const partial of allPromptPartials) {
+        const cacheKey = partial.environment
+          ? `${partial.prompt_id}:${partial.index}:${partial.environment}`
+          : `${partial.prompt_id}:${partial.index}`;
+
+        // check session cache for prompt body of the partial first
+        let promptBody = promptBodyCache.get(cacheKey);
+
+        if (!promptBody) {
+          try {
+            // Fetch the prompt version
+            let versionResult;
+            if (partial.environment) {
+              versionResult = await $JAWN_API.POST(
+                "/v1/prompt-2025/query/environment-version",
+                {
+                  body: {
+                    promptId: partial.prompt_id,
+                    environment: partial.environment,
+                  },
+                },
+              );
+            } else {
+              versionResult = await $JAWN_API.POST(
+                "/v1/prompt-2025/query/production-version",
+                {
+                  body: {
+                    promptId: partial.prompt_id,
+                  },
+                },
+              );
+            }
+
+            if (versionResult.error || !versionResult.data?.data?.s3_url) {
+              continue;
+            }
+
+            // Fetch the prompt body
+            const s3Response = await fetch(versionResult.data.data.s3_url);
+            if (!s3Response.ok) {
+              continue;
+            }
+
+            promptBody = (await s3Response.json()) as OpenAIChatRequest;
+
+            newCacheEntries.set(cacheKey, promptBody);
+          } catch (error) {
+            console.error(
+              `Error fetching prompt body for partial ${partial.raw}:`,
+              error,
+            );
+            continue;
+          }
+        }
+
+        if (!promptBody) {
+          continue;
+        }
+
+        const messages = promptBody.messages || [];
+
+        if (partial.index >= 0 && partial.index < messages.length) {
+          const targetMessage = messages[partial.index];
+
+          if (typeof targetMessage.content === "string") {
+            const variables = HeliconeTemplateManager.extractVariables(
+              targetMessage.content,
+            );
+            variables.forEach((variable) => {
+              const key = variable.name;
+              if (!partialVariablesMap.has(key)) {
+                partialVariablesMap.set(key, {
+                  ...variable,
+                  from_prompt_partial: true,
+                });
+              }
+            });
+          } else if (Array.isArray(targetMessage.content)) {
+            for (const contentPart of targetMessage.content) {
+              if (contentPart.type === "text" && contentPart.text) {
+                const variables = HeliconeTemplateManager.extractVariables(
+                  contentPart.text,
+                );
+                variables.forEach((variable) => {
+                  const key = variable.name;
+                  if (!partialVariablesMap.has(key)) {
+                    partialVariablesMap.set(key, {
+                      ...variable,
+                      from_prompt_partial: true,
+                    });
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // update session cache with new entries
+      if (newCacheEntries.size > 0) {
+        setPromptBodyCache((prevCache) => {
+          const updatedCache = new Map(prevCache);
+          newCacheEntries.forEach((body, key) => {
+            updatedCache.set(key, body);
+          });
+          return updatedCache;
+        });
+      }
+
+      // Populate promptPartialInputs from cached prompt bodies
+      const updatedPartialInputs: Record<string, string> = {};
+      for (const partial of allPromptPartials) {
+        const cacheKey = partial.environment
+          ? `${partial.prompt_id}:${partial.index}:${partial.environment}`
+          : `${partial.prompt_id}:${partial.index}`;
+
+        const promptBody =
+          promptBodyCache.get(cacheKey) || newCacheEntries.get(cacheKey);
+
+        if (
+          promptBody &&
+          promptBody.messages &&
+          partial.index >= 0 &&
+          partial.index < promptBody.messages.length
+        ) {
+          const targetMessage = promptBody.messages[partial.index];
+          let substitutionValue = "";
+
+          if (typeof targetMessage.content === "string") {
+            substitutionValue = targetMessage.content;
+          } else if (Array.isArray(targetMessage.content)) {
+            substitutionValue = targetMessage.content
+              .map((contentPart) => {
+                if (contentPart.type === "text" && contentPart.text) {
+                  return contentPart.text;
                 }
-                setOpen(true);
-              }}
-              className={clsx(
-                singleRequest === null ? "opacity-50" : "",
-                "bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 hover:bg-sky-50 dark:hover:bg-sky-900 flex flex-row items-center gap-2"
-              )}
-            >
-              <CodeBracketSquareIcon className="h-5 w-5 text-gray-900 dark:text-gray-100" />
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:block">
-                View Source
-              </p>
-            </button>
+                return "";
+              })
+              .filter((text) => text.length > 0)
+              .join(" ");
+          }
+
+          if (substitutionValue) {
+            updatedPartialInputs[partial.raw] = substitutionValue;
+          }
+        }
+      }
+
+      if (Object.keys(updatedPartialInputs).length > 0) {
+        setPromptPartialInputs({
+          ...promptPartialInputs,
+          ...updatedPartialInputs,
+        });
+      }
+
+      partialVariablesMap.forEach((variable, key) => {
+        if (!allVariables.has(key)) {
+          allVariables.set(key, variable);
+        }
+      });
+
+      initializeColorMap(Array.from(allVariables.keys()));
+      setTemplateVariables(new Map(allVariables));
+    };
+
+    if (allPromptPartials.length > 0) {
+      fetchPartialVariables();
+    } else {
+      initializeColorMap(Array.from(allVariables.keys()));
+      setTemplateVariables(allVariables);
+    }
+  }, [mappedContent, modelParameters, selectedModel, responseFormat, tools]);
+
+  const createTemplatedMessages = (
+    substitutionValues: Record<string, any>,
+    promptPartialInputs: Record<string, any>,
+    messages: Message[],
+  ): { hasSubstitutionFailure: boolean; templatedMessages: Message[] } => {
+    const templatedMessages: Message[] = [];
+    let hasSubstitutionFailure = false;
+
+    for (const message of messages) {
+      if (message._type === "contentArray" && message.contentArray) {
+        const processedContentArray = message.contentArray.map((item) => {
+          if (item._type === "message" && item.content) {
+            const substituted = HeliconeTemplateManager.substituteVariables(
+              item.content,
+              substitutionValues,
+              promptPartialInputs,
+            );
+            if (!substituted.success) hasSubstitutionFailure = true;
+            return {
+              ...item,
+              content: substituted.success ? substituted.result : item.content,
+            };
+          }
+          return item;
+        });
+        templatedMessages.push({
+          ...message,
+          contentArray: processedContentArray,
+        });
+      } else if (message.content) {
+        const substituted = HeliconeTemplateManager.substituteVariables(
+          message.content,
+          substitutionValues,
+          promptPartialInputs,
+        );
+        if (!substituted.success) hasSubstitutionFailure = true;
+        templatedMessages.push({
+          ...message,
+          content: substituted.success ? substituted.result : message.content,
+        });
+      } else {
+        templatedMessages.push(message);
+      }
+    }
+
+    return { hasSubstitutionFailure, templatedMessages };
+  };
+
+  const createTemplatedMappedContent = (
+    mappedContent: MappedLLMRequest,
+  ): MappedLLMRequest => {
+    try {
+      const substitutionValues = Object.fromEntries(
+        Object.entries(variableInputs).map(([name, { isObject, value }]) => {
+          if (isObject) {
+            try {
+              return [name, JSON.parse(value)];
+            } catch (error) {
+              throw new Error(`Invalid JSON for variable "${name}": ${error}`);
+            }
+          }
+          return [name, value];
+        }),
+      );
+
+      const { hasSubstitutionFailure, templatedMessages } =
+        createTemplatedMessages(
+          substitutionValues,
+          promptPartialInputs,
+          mappedContent.schema.request.messages || [],
+        );
+      if (hasSubstitutionFailure) {
+        setNotification("Improper template values!", "error");
+        return mappedContent;
+      }
+      const substituted = HeliconeTemplateManager.substituteVariablesJSON(
+        mappedContent.schema.request.response_format as ResponseFormat,
+        substitutionValues,
+      );
+      if (!substituted.success) {
+        setNotification("Improper template values!", "error");
+      }
+
+      const substitutedTools = HeliconeTemplateManager.substituteVariablesJSON(
+        mappedContent.schema.request.tools as Tool[],
+        substitutionValues,
+      );
+      if (!substitutedTools.success) {
+        setNotification("Improper template values!", "error");
+      }
+
+      return {
+        ...mappedContent,
+        schema: {
+          ...mappedContent.schema,
+          request: {
+            ...mappedContent.schema.request,
+            messages: templatedMessages,
+            response_format: substituted.success
+              ? (substituted.result as ResponseFormat)
+              : mappedContent.schema.request.response_format,
+            tools: substitutedTools.success
+              ? (substitutedTools.result as Tool[])
+              : mappedContent.schema.request.tools,
+          },
+        },
+      };
+    } catch (error) {
+      setNotification("Improper template values!", "error");
+      return mappedContent;
+    }
+  };
+
+  const onRun = async () => {
+    if (!mappedContent) {
+      setNotification("No mapped content", "error");
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsLoading(true);
+      abortController.current = new AbortController();
+
+      try {
+        const templatedMappedContent =
+          createTemplatedMappedContent(mappedContent);
+
+        const openaiRequest = convertMappedLLMRequestToOpenAIChatRequest(
+          templatedMappedContent,
+          templatedMappedContent.schema.request.tools as Tool[],
+          modelParameters,
+          selectedModel,
+          templatedMappedContent.schema.request
+            .response_format as ResponseFormat,
+        );
+
+        const stream = await generateStream({
+          ...openaiRequest,
+          signal: abortController.current.signal,
+        } as any);
+
+        const result = await processStream(
+          stream,
+          {
+            initialState: {
+              fullContent: "",
+            },
+            onUpdate: (result) => {
+              setError(null);
+              setIsLoading(false);
+              setResponse(result.fullContent);
+            },
+          },
+          abortController.current.signal,
+        );
+
+        if (result && result.error) {
+          if (typeof result.error.message === "string") {
+            try {
+              const error = JSON.parse(result.error.message);
+              if (error?.error) {
+                setError(error.error);
+              } else {
+                setError(error.message);
+              }
+            } catch (error) {
+              setError(result.error.message);
+            }
+          }
+          const error = result.error.message || result.error?.error?.message;
+          if (error.includes("Insufficient credits")) {
+            setError(
+              "Insufficient credits. Please add credits to continue using the playground.",
+            );
+          } else {
+            setError(error);
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.name === "AbortError") {
+            setError("Request was cancelled");
+            setNotification("Request was cancelled", "error");
+          } else {
+            console.error("Error:", error);
+            setError(
+              error.message ||
+                "An error occurred while generating the response",
+            );
+            setNotification(
+              error.message ||
+                "An error occurred while generating the response",
+              "error",
+            );
+          }
+        }
+      } finally {
+        setIsLoading(false);
+        abortController.current = null;
+      }
+    } catch (error) {
+      setNotification("Failed to save prompt state", "error");
+      setIsLoading(false);
+      if (error instanceof Error) {
+        setError(error.message);
+      }
+    }
+  };
+
+  // Add keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        onRun();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mappedContent]);
+
+  const handleResponseFormatChange = (newResponseFormat: ResponseFormat) => {
+    setResponseFormat(newResponseFormat);
+    if (!mappedContent) {
+      return;
+    }
+    setMappedContent({
+      ...mappedContent,
+      schema: {
+        ...mappedContent.schema,
+        request: {
+          ...mappedContent.schema.request,
+          response_format: newResponseFormat,
+        },
+      },
+    });
+  };
+
+  const handleToolsChange = (newTools: Tool[]) => {
+    setTools(newTools);
+    if (!mappedContent) {
+      return;
+    }
+    setMappedContent({
+      ...mappedContent,
+      schema: {
+        ...mappedContent.schema,
+        request: { ...mappedContent.schema.request, tools: newTools },
+      },
+    });
+  };
+
+  const handleSelectedModelChange = (newModel: string) => {
+    setSelectedModel(newModel);
+    if (!mappedContent) {
+      return;
+    }
+    setMappedContent({
+      ...mappedContent,
+      model: newModel,
+      schema: {
+        ...mappedContent.schema,
+        request: { ...mappedContent.schema.request, model: newModel },
+      },
+    });
+  };
+
+  return (
+    <main className="flex h-screen w-full animate-fade-in flex-col">
+      <FoldedHeader
+        showFold={false}
+        leftSection={
+          <div className="flex items-center gap-3">
+            <Link href="/playground">
+              <Small className="font-bold text-gray-500 dark:text-slate-300">
+                Playground
+              </Small>
+            </Link>
+            {promptVersionData?.prompt && promptVersionData?.promptVersion && (
+              <>
+                <div className="h-4 w-px bg-border" />
+                <div className="flex items-center gap-2">
+                  <Small className="font-bold text-gray-500 dark:text-slate-300">
+                    {promptVersionData.prompt.name.length > 30
+                      ? promptVersionData.prompt.name.substring(0, 27) + "..."
+                      : promptVersionData.prompt.name}
+                  </Small>
+                  <PromptVersionPill
+                    majorVersion={promptVersionData.promptVersion.major_version}
+                    minorVersion={promptVersionData.promptVersion.minor_version}
+                  />
+                  {promptVersionData.promptVersion.environments?.map((env) => (
+                    <EnvironmentPill key={env} environment={env} />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         }
       />
-      <div className="flex justify-between w-full h-full gap-8 min-h-[80vh]">
-        <div className="flex w-full h-full ">
-          {isLoading ? (
-            <div className="col-span-8 flex w-full border border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 h-96 animate-pulse dark:text-gray-100 items-center justify-center">
-              Loading...
-            </div>
-          ) : hasData && isChat && singleRequest !== null ? (
-            <>
-              <ChatPlayground
-                requestId={requestId || ""}
-                chat={chat}
-                models={selectedModels}
-                temperature={temperature}
-                maxTokens={maxTokens}
-                tools={currentTools}
-                providerAPIKey={providerAPIKey}
+      <div className="flex h-full min-h-[80vh] w-full flex-col border-t border-border">
+        <ResizablePanelGroup direction="horizontal">
+          <ResizablePanel
+            className="flex h-full w-full"
+            defaultSize={70}
+            minSize={30}
+          >
+            {isPromptVersionLoading || isRequestLoading ? (
+              <LoadingAnimation />
+            ) : (
+              <PlaygroundMessagesPanel
+                mappedContent={mappedContent}
+                defaultContent={defaultContent}
+                setMappedContent={setMappedContent}
+                selectedModel={selectedModel}
+                setSelectedModel={handleSelectedModelChange}
+                tools={tools}
+                setTools={handleToolsChange}
+                responseFormat={responseFormat}
+                setResponseFormat={handleResponseFormatChange}
+                modelParameters={modelParameters}
+                setModelParameters={setModelParameters}
+                promptVersionId={promptVersionId}
+                onCreatePrompt={onCreatePrompt}
+                onSavePrompt={onSavePrompt}
+                onRun={onRun}
+                error={error}
+                isLoading={isStreaming}
+                createPrompt={createPrompt}
+                unsupportedModelWarning={unsupportedModelWarning}
+                onDismissUnsupportedModelWarning={() =>
+                  setUnsupportedModelWarning(null)
+                }
               />
-            </>
-          ) : singleRequest !== null && !isChat ? (
-            <div className="col-span-8 h-full max-w-full flex flex-col items-center justify-center border border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500 p-4 overflow-hidden">
-              <p className="text-center mb-4">
-                This request is not a chat completion request. We do not
-                currently support non-chat completion requests in playground.
-              </p>
-
-              <div className="max-w-96 overflow-auto mt-4">
-                <pre className="text-xs whitespace-pre-wrap text-black dark:text-white break-words max-w-full">
-                  {JSON.stringify(singleRequest, null, 2)}
-                </pre>
-              </div>
-            </div>
-          ) : debouncedRequestId === "" ? (
-            <ChatPlayground
-              requestId={"requestId"}
-              chat={[
-                {
-                  id: "1",
-                  content: "Hi, what can I do in the playground?",
-                  role: "user",
-                  _type: "message",
-                },
-                {
-                  id: "2",
-                  content:
-                    "Welcome to the playground! This is a space where you can replay user requests, experiment with various prompts, and test different models. Feel free to explore and interact with the available features. Let's get started!",
-                  _type: "message",
-                  role: "assistant",
-                },
-                {
-                  id: "3",
-                  content: "What is the weather in Tokyo?",
-                  _type: "message",
-                  role: "user",
-                },
-              ]}
-              models={selectedModels}
-              temperature={temperature}
-              maxTokens={maxTokens}
-              providerAPIKey={providerAPIKey}
-            />
-          ) : (
-            <div className="w-full h-96 items-center justify-center flex flex-col border border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500">
-              No data found for this request. Please make sure the request is
-              correct or try another request.
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col w-full max-w-[16rem] h-full space-y-8 ">
-          <div className="flex flex-col space-y-2 w-full">
-            <div className="flex flex-row w-full space-x-1 items-center">
-              <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                Models
-              </p>
-              <button
-                onClick={() => {
-                  setInfoOpen(true);
-                }}
-                className="hover:cursor-pointer"
-              >
-                <InformationCircleIcon className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-            <MultiSelect
-              placeholder="Select your models..."
-              value={selectedModels?.map((model) => model.name) || []}
-              onValueChange={(values: string[]) => {
-                setSelectedModels(
-                  values.map(
-                    (value) =>
-                      playgroundModels.find((model) => model.name === value)!
-                  )
-                );
-              }}
-              className=""
-            >
-              {playgroundModels.map((model, idx) => (
-                <MultiSelectItem
-                  value={model.name}
-                  key={idx}
-                  className="font-medium text-black"
-                >
-                  {model.name || ""}
-                </MultiSelectItem>
-              ))}
-            </MultiSelect>
-          </div>
-          <div className="flex flex-col space-y-2 w-full">
-            <div className="flex flex-row w-full justify-between items-center">
-              <label
-                htmlFor="temp"
-                className="flex gap-1 font-medium text-sm text-gray-900 dark:text-gray-100"
-              >
-                <span>Provider API Key</span>
-
-                <Tooltip
-                  title={
-                    "Your API keys are required to use fine-tuned models in the playground."
-                  }
-                  placement="top-end"
-                >
-                  <InformationCircleIcon className="h-5 w-5 text-gray-500" />
-                </Tooltip>
-              </label>
-            </div>
-            <Input
-              type="password"
-              value={providerAPIKey}
-              placeholder="Enter your provider API Key (optional)"
-              onChange={(e) => {
-                setProviderAPIKey(e.target.value);
-              }}
-              className="w-full text-sm px-2 py-1 rounded-lg border border-gray-300"
-            />
-          </div>
-          {!selectedModels.some(
-            (model) => model.name.includes("o1") || model.name.includes("o3")
-          ) && (
-            <div className="flex flex-col space-y-2 w-full">
-              <div className="flex flex-row w-full justify-between items-center">
-                <label
-                  htmlFor="temp"
-                  className="font-medium text-sm text-gray-900 dark:text-gray-100"
-                >
-                  Temperature
-                </label>
-                <Input
-                  type="number"
-                  id="temp"
-                  name="temp"
-                  value={temperature}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value);
-                    if (value < 0.01) {
-                      setTemperature(0.01);
-                      return;
-                    }
-                    if (value > 1.99) {
-                      setTemperature(1.99);
-                      return;
-                    }
-                    setTemperature(parseFloat(e.target.value));
-                  }}
-                  min={0.01}
-                  max={1.99}
-                  step={0.01}
-                  className="w-14 text-sm px-2 py-1 rounded-lg border border-gray-300"
+            )}
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel defaultSize={30} minSize={20}>
+            <ResizablePanelGroup direction="vertical">
+              <ResizablePanel defaultSize={60} minSize={30}>
+                <PlaygroundResponsePanel
+                  mappedContent={mappedContent}
+                  setMappedContent={setMappedContent}
+                  error={error}
+                  response={response}
+                  isStreaming={isStreaming}
                 />
-              </div>
-              <Slider
-                value={[temperature]}
-                onValueChange={(value) => {
-                  setTemperature(value[0]);
-                }}
-                min={0.01}
-                max={1.99}
-                step={0.01}
-              />
-            </div>
-          )}
-          {!selectedModels.some(
-            (model) => model.name.includes("o1") || model.name.includes("o3")
-          ) && (
-            <div className="flex flex-col space-y-2 w-full">
-              <div className="flex flex-row w-full justify-between items-center">
-                <label
-                  htmlFor="tokens"
-                  className="font-medium text-sm text-gray-900 dark:text-gray-100"
-                >
-                  Max Tokens
-                </label>
-                <Input
-                  type="number"
-                  id="tokens"
-                  name="tokens"
-                  value={maxTokens}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value);
-                    if (value < 1) {
-                      setMaxTokens(1);
-                      return;
-                    }
-                    if (value > 2048) {
-                      setMaxTokens(2048);
-                      return;
-                    }
-                    setMaxTokens(parseFloat(e.target.value));
+              </ResizablePanel>
+              <ResizableHandle />
+              <ResizablePanel defaultSize={40} minSize={20}>
+                <PlaygroundVariablesPanel
+                  variables={templateVariables}
+                  onUpdateValue={(name, { isObject, value }) => {
+                    setVariableInputs({
+                      ...variableInputs,
+                      [name]: { isObject, value },
+                    });
                   }}
-                  min={1}
-                  max={2048}
-                  step={1}
-                  className="w-14 text-sm px-2 py-1 rounded-lg border border-gray-300"
+                  values={variableInputs}
                 />
-              </div>
-              <Slider
-                value={[maxTokens]}
-                onValueChange={(value) => {
-                  setMaxTokens(value[0]);
-                }}
-                min={1}
-                max={2048}
-                step={1}
-              />
-            </div>
-          )}
-          <div className="flex flex-col space-y-2 w-full">
-            <div className="flex flex-row w-full space-x-1 items-center">
-              <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                Tools
-              </p>
-              <Button
-                variant={"ghost"}
-                size={"xs"}
-                onClick={() => {
-                  const defaultTool = {
-                    type: "function",
-                    function: {
-                      name: `get_current_weather`,
-                      description:
-                        "Get the current weather in a given location",
-                      parameters: {
-                        type: "object",
-                        properties: {
-                          location: {
-                            type: "string",
-                            description:
-                              "The city and state, e.g. San Francisco, CA",
-                          },
-                          unit: {
-                            type: "string",
-                            enum: ["celsius", "fahrenheit"],
-                          },
-                        },
-                        required: ["location"],
-                      },
-                    },
-                  };
-                  // append the default tool to a deep copy of the current tools
-                  const copy = JSON.parse(JSON.stringify(currentTools));
-                  const newTools = copy.concat(defaultTool);
-
-                  setCurrentTools(newTools);
-                }}
-              />
-            </div>
-            <ul className="flex flex-col space-y-2">
-              {currentTools?.map((tool: ChatCompletionTool, index: number) => (
-                <FunctionButton
-                  key={index}
-                  tool={tool}
-                  onSave={(functionText: string) => {
-                    // parse the function text and update the current tools
-                    try {
-                      // update the current tools
-                      const newTools = JSON.parse(JSON.stringify(currentTools));
-                      newTools[index].function = JSON.parse(functionText);
-                      setCurrentTools(newTools);
-                      setNotification("Function updated", "success");
-                    } catch (e) {
-                      console.error(e);
-                      setNotification("Failed to update function", "error");
-                    }
-                  }}
-                  onDelete={(name: string) => {
-                    // delete the function from the current tools
-                    const newTools = currentTools.filter(
-                      (tool: any) => tool.function.name !== name
-                    );
-                    setCurrentTools(newTools);
-                  }}
-                />
-              ))}
-            </ul>
-          </div>
-        </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
-      <ThemedModal open={infoOpen} setOpen={setInfoOpen}>
-        <div className="w-[450px] flex flex-col space-y-4">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-            Experiment with Models
-          </h3>
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            Easily experiment with different models and parameters to see how
-            they affect your chats. Different experiments will{" "}
-            <span className="font-semibold italic">use the same model</span> for
-            the entire conversation.
-          </p>
-          <div className="flex justify-center">
-            <Image
-              src={"/assets/playground/playground-graphic.png"}
-              height={400}
-              width={300}
-              alt={"playground-graphic"}
-            />
-          </div>
-          <p className="text-sm text-gray-700 dark:text-gray-300">
-            For the experiments above, the conversation for{" "}
-            <span className="font-semibold italic">gpt-3.5-turbo</span> will
-            take the flow: A - B - D - E
-          </p>
-        </div>
-      </ThemedModal>
-    </IslandContainer>
+    </main>
   );
 };
 
@@ -559,97 +1316,7 @@ export default PlaygroundPage;
 
 /** Types and Function for using finetuned models in Playground, Experiments Page */
 interface PlaygroundPageProps {
-  showNewButton?: boolean;
-  request?: string;
-}
-
-export type TFinetunedJob = {
-  object: string;
-  id: string;
-  model: string;
-  created_at: number;
-  finished_at: number;
-  fine_tuned_model: string;
-  organization_id: string;
-  result_files: Array<string>;
-  status:
-    | "validating_files"
-    | "queued"
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "cancelled";
-  validation_file: any;
-  training_file: string;
-  hyperparameters: {
-    n_epochs: number;
-    batch_size: number;
-    learning_rate_multiplier: number;
-  };
-  trained_tokens: number | null;
-  integrations: Array<any>;
-  seed: number;
-  estimated_finish: number;
-};
-
-export async function fetchFineTuneModels(
-  providerAPIKey: string | undefined,
-  setPlaygroundModels: Dispatch<SetStateAction<PlaygroundModel[]>>
-) {
-  // Using user's own api key, so no need to use /api routes
-  const res = await fetch("https://api.openai.com/v1/fine_tuning/jobs", {
-    headers: {
-      Authorization: `Bearer ${providerAPIKey}`,
-      "Content-Type": "application/json",
-    },
-  });
-  const ftJobsList = await res.json();
-  if (ftJobsList.error) return;
-
-  const ftJobs = ftJobsList.data as Array<TFinetunedJob>;
-
-  const ftModels = ftJobs
-    .map((job) => {
-      if (job.status === "succeeded") {
-        return {
-          name: job.fine_tuned_model,
-          provider: "OPENAI",
-        };
-      }
-    })
-    .filter((model) => model !== undefined) as PlaygroundModel[];
-
-  setPlaygroundModels((prev) => playgroundModels.concat(ftModels));
-}
-
-export function useFineTuneModels(providerAPIKey: string | undefined) {
-  return useQuery({
-    queryKey: ["fine-tune-models", providerAPIKey],
-    queryFn: async (query) => {
-      const providerAPIKey = query.queryKey[1];
-      const res = await fetch("https://api.openai.com/v1/fine_tuning/jobs", {
-        headers: {
-          Authorization: `Bearer ${providerAPIKey}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const ftJobsList = await res.json();
-      if (ftJobsList.error) return;
-
-      const ftJobs = ftJobsList.data as Array<TFinetunedJob>;
-
-      const ftModels = ftJobs
-        .map((job) => {
-          if (job.status === "succeeded") {
-            return {
-              name: job.fine_tuned_model,
-              provider: "OPENAI",
-            };
-          }
-        })
-        .filter((model) => model !== undefined) as PlaygroundModel[];
-
-      return ftModels;
-    },
-  });
+  requestId?: string;
+  promptVersionId?: string;
+  createPrompt?: boolean;
 }

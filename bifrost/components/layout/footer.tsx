@@ -66,7 +66,7 @@ const Footer = () => {
           width={150}
           height={150}
         />
-        <p className="mt-2">&copy; 2024 Helicone, Inc</p>
+        <p className="mt-2">&copy; 2025 Helicone, Inc</p>
         <p className="">All rights reserved.</p>
       </div>
 
@@ -181,13 +181,6 @@ const Footer = () => {
           </a>
           <a className="hover:underline" href="/pricing" target="_blank">
             Pricing
-          </a>
-          <a
-            className="hover:underline"
-            href="https://us.helicone.ai/open-stats"
-            target="_blank"
-          >
-            Stats
           </a>
           <a className="hover:underline" href="/community" target="_blank">
             Community

@@ -1,18 +1,19 @@
 import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
-import { Env } from "../../..";
 import { MessageData, MessageProducer } from "./types";
 import { Result, err, ok } from "../../util/results";
 
 export class SQSProducerImpl implements MessageProducer {
   private sqs: SQSClient;
   private queueUrl: string;
+  private lowerPriorityQueueUrl: string;
 
   constructor(env: Env) {
     if (
       !env.AWS_REGION ||
       !env.AWS_ACCESS_KEY_ID ||
       !env.AWS_SECRET_ACCESS_KEY ||
-      !env.REQUEST_LOGS_QUEUE_URL
+      !env.REQUEST_LOGS_QUEUE_URL ||
+      !env.REQUEST_LOGS_QUEUE_URL_LOW_PRIORITY
     ) {
       throw new Error(
         "Required AWS SQS environment variables are not set, SQSProducer will not be initialized."
@@ -28,6 +29,11 @@ export class SQSProducerImpl implements MessageProducer {
     });
 
     this.queueUrl = env.REQUEST_LOGS_QUEUE_URL;
+    this.lowerPriorityQueueUrl = env.REQUEST_LOGS_QUEUE_URL_LOW_PRIORITY;
+  }
+
+  setLowerPriority() {
+    this.queueUrl = this.lowerPriorityQueueUrl;
   }
 
   async sendMessage(msg: MessageData): Promise<Result<null, string>> {
@@ -46,7 +52,7 @@ export class SQSProducerImpl implements MessageProducer {
 
         return ok(null);
       } catch (error: any) {
-        console.log(`SQS attempt ${attempts + 1} failed: ${error.message}`);
+        console.error(`SQS attempt ${attempts + 1} failed: ${error.message}`);
         attempts++;
         if (attempts < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, timeout));

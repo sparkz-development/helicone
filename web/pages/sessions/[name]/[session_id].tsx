@@ -13,7 +13,7 @@ import { sessionFromHeliconeRequests } from "../../../lib/sessions/sessionsFromH
 import { useGetRequests } from "../../../services/hooks/requests";
 import { useRouter } from "next/router";
 import { useFilterAST } from "@/filterAST/context/filterContext";
-import { toFilterNode } from "@/filterAST/toFilterNode";
+import { toFilterNode } from "@helicone-package/filters/toFilterNode";
 
 export const SessionDetail = ({
   session_id,
@@ -43,10 +43,10 @@ export const SessionDetail = ({
           query: { ...router.query, page: newPage.toString() },
         },
         undefined,
-        { shallow: true }
+        { shallow: true },
       );
     },
-    [router]
+    [router],
   );
 
   const handlePageSizeChange = useCallback(
@@ -59,10 +59,10 @@ export const SessionDetail = ({
           query: { ...router.query, page: "1" },
         },
         undefined,
-        { shallow: true }
+        { shallow: true },
       );
     },
-    [router]
+    [router],
   );
 
   useEffect(() => {
@@ -114,10 +114,10 @@ export const SessionDetail = ({
       },
     },
     {
-      created_at: "desc",
+      created_at: "asc",
     },
     false,
-    isLive
+    isLive,
   );
 
   // Process requests: Check for realtime session and convert if necessary
@@ -160,7 +160,7 @@ SessionDetail.getLayout = function getLayout(page: ReactElement) {
 export default SessionDetail;
 
 export const getServerSideProps = async (
-  context: GetServerSidePropsContext
+  context: GetServerSidePropsContext,
 ) => {
   const { session_id, name: session_name } = context.query;
 

@@ -85,7 +85,8 @@ export class RevenueCalculator {
   // Get monthly revenue data for a product
   public getProductRevenue(
     productId: string | string[],
-    months = 6
+    months = 6,
+    priceFilter?: { include?: string[]; exclude?: string[] },
   ): MonthlyRevenueData {
     // Get all invoices for this product/products
     let invoices: Stripe.Invoice[] = [];
@@ -129,10 +130,11 @@ export class RevenueCalculator {
       this.filterUpcomingInvoicesForCurrentMonth(allUpcomingInvoices);
 
     // Format all invoices
-    const billedInvoices = this.formatInvoices(filteredInvoices, productId);
+    const billedInvoices = this.formatInvoices(filteredInvoices, productId, priceFilter);
     const upcomingFormattedInvoices = this.formatInvoices(
       upcomingInvoices,
-      productId
+      productId,
+      priceFilter,
     );
 
     // Group billed invoices by month
@@ -151,11 +153,11 @@ export class RevenueCalculator {
       // Calculate monthly totals
       const current = monthInvoices.reduce(
         (sum, inv) => sum + inv.amountAfterProcessing,
-        0
+        0,
       );
       const projected = relevantUpcomingInvoices.reduce(
         (sum, inv) => sum + inv.amountAfterProcessing,
-        0
+        0,
       );
 
       // Store data for this month
@@ -172,14 +174,14 @@ export class RevenueCalculator {
 
   // Group invoices by month in YYYY-MM format
   private groupInvoicesByMonth(
-    invoices: InvoiceData[]
+    invoices: InvoiceData[],
   ): Record<string, InvoiceData[]> {
     const byMonth: Record<string, InvoiceData[]> = {};
 
     invoices.forEach((invoice) => {
       const date = invoice.created;
       const monthKey = `${date.getFullYear()}-${String(
-        date.getMonth() + 1
+        date.getMonth() + 1,
       ).padStart(2, "0")}`;
 
       if (!byMonth[monthKey]) {
@@ -196,14 +198,14 @@ export class RevenueCalculator {
   private isCurrentMonth(monthKey: string): boolean {
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
+      now.getMonth() + 1,
     ).padStart(2, "0")}`;
     return monthKey === currentMonthKey;
   }
 
   // Filter upcoming invoices to only include those due by the end of the current month
   private filterUpcomingInvoicesForCurrentMonth(
-    invoices: Stripe.UpcomingInvoice[]
+    invoices: Stripe.UpcomingInvoice[],
   ): Stripe.UpcomingInvoice[] {
     // Get the last day of the current month
     const now = new Date();
@@ -224,7 +226,7 @@ export class RevenueCalculator {
   // Helper methods
   private filterByMonths(
     invoices: Stripe.Invoice[],
-    months: number
+    months: number,
   ): Stripe.Invoice[] {
     if (months <= 0) return invoices; // No filtering
 
@@ -236,7 +238,8 @@ export class RevenueCalculator {
 
   private formatInvoices(
     invoices: Stripe.Invoice[] | Stripe.UpcomingInvoice[],
-    productId?: string | string[]
+    productId?: string | string[],
+    priceFilter?: { include?: string[]; exclude?: string[] },
   ): InvoiceData[] {
     return invoices
       .map((inv) => {
@@ -245,7 +248,8 @@ export class RevenueCalculator {
           calculateInvoiceAmounts(
             inv,
             this.discounts,
-            typeof productId === "string" ? productId : undefined // Only pass single productId
+            typeof productId === "string" ? productId : undefined, // Only pass single productId
+            priceFilter,
           );
 
         if (amountAfterProcessing <= 0) return null;

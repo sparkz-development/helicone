@@ -5,32 +5,37 @@ import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 import React from "react";
 import FilterGroupNode from "./components/FilterGroupNode";
-import SavedFiltersDropdown from "./components/SavedFiltersDropdown";
 import { useFilterAST } from "./context/filterContext";
 import {
   AndExpression,
   DEFAULT_FILTER_GROUP_EXPRESSION,
   OrExpression,
-} from "./filterAst";
+} from "@helicone-package/filters/types";
 
-interface FilterASTEditorProps {}
+interface FilterASTEditorProps {
+  showCurlButton?: boolean;
+  showTitle?: boolean;
+}
 
-export const FilterASTEditor: React.FC<FilterASTEditorProps> = ({}) => {
+export const FilterASTEditor: React.FC<FilterASTEditorProps> = ({
+  showCurlButton = false,
+  showTitle = true
+}) => {
   const { store: filterStore, helpers } = useFilterAST();
 
   return (
-    <div className="space-y-3 w-full bg-background rounded-md py-4 px-6">
-      <div className="flex items-center justify-between ">
+    <div className="w-full space-y-3 rounded-md bg-background px-6 py-4">
+      <div className="flex items-center justify-between">
         <div className="flex flex-col items-center gap-1.5">
-          {filterStore.activeFilterName !== null && (
-            <div className="flex items-center gap-1 group border-b border-dotted border-transparent hover:border-gray-300 dark:hover:border-slate-600">
+          {showTitle && filterStore.activeFilterName !== null && (
+            <div className="group flex items-center gap-1 border-b border-dotted border-transparent hover:border-gray-300 dark:hover:border-slate-600">
               <Input
                 value={filterStore.activeFilterName}
                 onChange={(e) => {
                   filterStore.setActiveFilterName(e.target.value);
                 }}
                 disabled={filterStore.filter === null}
-                className="text-sm font-medium border-none p-0 h-auto min-h-[24px] w-fit focus-visible:ring-0 bg-transparent"
+                className="h-auto min-h-[24px] w-fit border-none bg-transparent p-0 text-sm font-medium focus-visible:ring-0"
                 placeholder="Untitled Filter"
               />
             </div>
@@ -38,22 +43,21 @@ export const FilterASTEditor: React.FC<FilterASTEditorProps> = ({}) => {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Row className="gap-1 items-center">
+          <Row className="items-center gap-1">
             {filterStore.getFilterNodeCount() > 0 && (
               <Badge
                 variant="default"
-                className="text-xs text-center hover:bg-primary hover:text-primary-foreground"
+                className="text-center text-xs hover:bg-primary hover:text-primary-foreground"
               >
                 {filterStore.getFilterNodeCount()}
               </Badge>
             )}
             {filterStore.filter !== null && (
-              <Button variant="ghost" size="xs" onClick={helpers.clearFilter}>
+              <Button type="button" variant="ghost" size="xs" onClick={helpers.clearFilter}>
                 Clear
               </Button>
             )}
           </Row>
-          <SavedFiltersDropdown />
         </div>
       </div>
 
@@ -63,12 +67,14 @@ export const FilterASTEditor: React.FC<FilterASTEditorProps> = ({}) => {
             group={filterStore.filter as AndExpression | OrExpression}
             path={[]}
             isRoot={true}
+            showCurlButton={showCurlButton}
           />
         ) : (
           <Button
+            type="button"
             variant="glass"
             size="xs"
-            className="flex items-center gap-1 w-fit"
+            className="flex w-fit items-center gap-1"
             onClick={() => {
               filterStore.setFilter(DEFAULT_FILTER_GROUP_EXPRESSION);
               filterStore.setActiveFilterName("Untitled Filter");

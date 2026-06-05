@@ -32,6 +32,14 @@ export interface HeliconeAuthClient {
     options?: { emailRedirectTo?: string };
   }) => Promise<Result<void, string>>;
 
+  changePassword: ({
+    currentPassword,
+    newPassword,
+  }: {
+    currentPassword: string;
+    newPassword: string;
+  }) => Promise<Result<void, string>>;
+
   signInWithPassword: ({
     email,
     password,
@@ -45,6 +53,14 @@ export interface HeliconeAuthClient {
     options,
   }: {
     provider: "google" | "github";
+    options?: { redirectTo?: string };
+  }) => Promise<Result<void, string>>;
+
+  signInWithSSO: ({
+    domain,
+    options,
+  }: {
+    domain: string;
     options?: { redirectTo?: string };
   }) => Promise<Result<void, string>>;
 

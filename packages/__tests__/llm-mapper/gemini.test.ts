@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import { mapGeminiPro } from "../../llm-mapper/mappers/gemini/chat";
 import { mapAnthropicRequest } from "../../llm-mapper/mappers/anthropic/chat";
+import { Message } from "@/llm-mapper/types";
 
 describe("mapGeminiPro", () => {
   it("should handle basic text messages", () => {
@@ -99,10 +100,20 @@ describe("mapGeminiPro", () => {
     // Test request message handling
     expect(result.schema.request.messages![0]).toEqual({
       role: "user",
-      content: "What's in this image?",
-      _type: "image",
-      image_url: imageData,
-    });
+      contentArray: [
+        {
+          _type: "message",
+          content: "What's in this image?",
+          role: "user",
+        },
+        {
+          _type: "image",
+          image_url: `data:image/png;base64,${imageData}`,
+          role: "user",
+        },
+      ],
+      _type: "contentArray",
+    } as Message);
 
     // Test response message handling
     expect(result.schema.response!.messages![0]).toEqual({
@@ -144,6 +155,105 @@ describe("mapGeminiPro", () => {
         message: "Invalid request",
         code: 400,
       },
+    });
+  });
+
+  it("should handle image responses (inlineData in response)", () => {
+    const result = mapGeminiPro({
+      request: {
+        contents: [
+          {
+            parts: [{ text: "Draw a yellow star" }],
+            role: "user",
+          },
+        ],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        },
+      },
+      response: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/jpeg",
+                    data: "test_base64_image_data",
+                  },
+                },
+              ],
+              role: "model",
+            },
+          },
+        ],
+        modelVersion: "gemini-3-pro-image-preview",
+      },
+      statusCode: 200,
+      model: "gemini-3-pro-image-preview",
+    });
+
+    // Test response contains image
+    expect(result.schema.response!.messages![0]).toEqual({
+      _type: "image",
+      role: "model",
+      mime_type: "image/jpeg",
+      image_url: "data:image/jpeg;base64,test_base64_image_data",
+    });
+  });
+
+  it("should handle mixed text + image responses", () => {
+    const result = mapGeminiPro({
+      request: {
+        contents: [
+          {
+            parts: [{ text: "Draw a cat and describe it" }],
+            role: "user",
+          },
+        ],
+      },
+      response: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: "Here is a cute cat:",
+                },
+                {
+                  inlineData: {
+                    mimeType: "image/png",
+                    data: "cat_image_base64",
+                  },
+                },
+              ],
+              role: "model",
+            },
+          },
+        ],
+        modelVersion: "gemini-2.0-flash-exp",
+      },
+      statusCode: 200,
+      model: "gemini-2.0-flash-exp",
+    });
+
+    // Test response contains contentArray with text and image
+    expect(result.schema.response!.messages![0]).toEqual({
+      _type: "contentArray",
+      role: "model",
+      contentArray: [
+        {
+          _type: "message",
+          role: "model",
+          content: "Here is a cute cat:",
+        },
+        {
+          _type: "image",
+          role: "model",
+          mime_type: "image/png",
+          image_url: "data:image/png;base64,cat_image_base64",
+        },
+      ],
     });
   });
 

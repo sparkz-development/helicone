@@ -2,7 +2,7 @@ import { dbExecute } from "../db/dbExecute";
 
 async function _checkAccessToOrg(
   orgId: string,
-  userId: string
+  userId: string,
 ): Promise<boolean> {
   const query = `
   select * from organization_member om
@@ -20,22 +20,16 @@ async function _checkAccessToOrg(
 
 export async function checkAccessToMutateOrg(
   orgId: string,
-  userId: string
+  userId: string,
 ): Promise<boolean> {
   const orgToCheck = await dbExecute<{
     id: string;
-    reseller_id: string;
-  }>("SELECT id, reseller_id FROM organization WHERE id = $1", [orgId]);
+  }>("SELECT id FROM organization WHERE id = $1", [orgId]);
 
   if (!orgToCheck.data || orgToCheck.error !== null) {
     return false;
   }
   if (await _checkAccessToOrg(orgId as string, userId)) {
-    return true;
-  } else if (
-    orgToCheck.data?.[0].reseller_id &&
-    (await _checkAccessToOrg(orgToCheck.data[0].reseller_id as string, userId))
-  ) {
     return true;
   } else {
     return false;

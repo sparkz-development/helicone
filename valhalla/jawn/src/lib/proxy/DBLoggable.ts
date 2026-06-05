@@ -3,7 +3,7 @@ import { Provider } from "@helicone-package/llm-mapper/types";
 import { PromptSettings } from "../requestWrapper/requestWrapper";
 import { err, ok } from "../../packages/common/result";
 import { HeliconeProxyRequest } from "./HeliconeProxyRequest";
-import { HeliconeQueueProducer } from "../clients/HeliconeQuequeProducer";
+import { HeliconeQueueProducer } from "../clients/HeliconeQueueProducer";
 import { AuthParams } from "../../packages/common/auth/types";
 import { OrgParams } from "../../packages/common/auth/types";
 import { S3Manager } from "./S3Manager";
@@ -142,6 +142,9 @@ export class DBLoggable {
         webhookEnabled: requestHeaders.webhookEnabled,
         posthogApiKey: requestHeaders.posthogKey ?? undefined,
         posthogHost: requestHeaders.posthogHost ?? undefined,
+        gatewayRouterId: requestHeaders.gatewayRouterId ?? undefined,
+        gatewayDeploymentTarget:
+          requestHeaders.gatewayDeploymentTarget ?? undefined,
       },
       log: {
         request: {

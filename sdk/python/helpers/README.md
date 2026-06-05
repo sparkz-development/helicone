@@ -4,13 +4,16 @@ This is the Python SDK for Helicone Helpers. It provides convenient access to so
 
 ## Supported Features
 
-- [Manual Logging](https://docs.helicone.ai/getting-started/integration-method/custom).
+- [Manual Logging](https://docs.helicone.ai/getting-started/integration-method/custom)
+- [Prompt Management](https://docs.helicone.ai/features/advanced-usage/prompts) - Fetch and compile prompts with variable substitution
 
 ## Installation
 
 ```bash
-pip install helicone-helpers
+pip install helicone-helpers openai
 ```
+
+**Note:** The OpenAI Python SDK is required for prompt management features. The SDK will work without it but with limited type safety.
 
 ## Usage
 
@@ -130,3 +133,147 @@ helicone_logger.send_log(
 ```
 
 Note: The default logging endpoint is now `https://api.worker.helicone.ai`.
+
+### Prompt Management
+
+The SDK provides powerful prompt management capabilities that allow you to store, version, and dynamically compile prompts with variable substitution.
+
+```python
+from helicone_helpers import HeliconePromptManager
+import openai
+
+# Initialize the prompt manager
+prompt_manager = HeliconePromptManager(
+    api_key="sk-helicone-..."  # Your Helicone API key
+)
+
+# Initialize OpenAI client
+client = openai.OpenAI(api_key="sk-openai-...")
+
+# Use a prompt with variable substitution
+params = {
+    "prompt_id": "your-prompt-id",
+    "model": "gpt-4o-mini",
+    "inputs": {
+        "customer_name": "Alice Johnson",
+        "product": "AI Gateway"
+    },
+    "messages": [
+        {"role": "user", "content": "Follow up question..."}
+    ]
+}
+
+# Get compiled prompt with validation
+result = prompt_manager.get_prompt_body(params)
+
+# Check for validation errors
+if result["errors"]:
+    for error in result["errors"]:
+        print(f"Validation error - {error.variable}: expected {error.expected}, got {error.value}")
+
+# Use compiled prompt with OpenAI
+response = client.chat.completions.create(**result["body"])
+```
+
+#### Key Features
+
+- **Variable Substitution**: Use `{{hc:name:type}}` syntax in your prompts
+- **Prompt Partials**: Reference messages from other prompts using `{{hcp:prompt_id:index:environment}}`
+- **Type Validation**: Automatic validation for `string`, `number`, and `boolean` types
+- **Version Control**: Specify exact prompt versions or use production versions
+- **Message Merging**: Runtime messages are appended to saved prompt messages
+- **Parameter Override**: Runtime parameters take precedence over saved ones
+- **Schema Variables**: Dynamic JSON schema generation for tools and response formats
+
+#### Advanced Usage
+
+```python
+# Use specific prompt version
+params = {
+    "prompt_id": "your-prompt-id",
+    "version_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "model": "gpt-4o-mini",
+    "inputs": {
+        "user_tier": "premium",
+        "max_tokens_allowed": 1000
+    }
+}
+
+result = prompt_manager.get_prompt_body(params)
+
+# Handle validation errors gracefully
+if result["errors"]:
+    print(f"Found {len(result['errors'])} validation errors")
+    # Prompt still works with original values where substitution failed
+    
+compiled_prompt = result["body"]
+response = client.chat.completions.create(**compiled_prompt)
+```
+
+#### Handling Prompt Partials
+
+Prompt partials allow you to reuse messages from other prompts using the `{{hcp:prompt_id:index:environment}}` syntax. This is useful for maintaining a library of reusable prompt components.
+
+**Note:** When using the Helicone AI Gateway, prompt partials are resolved automatically. When using the SDK directly, you must manually resolve them:
+
+```python
+from helicone_helpers import HeliconePromptManager
+import openai
+
+# Initialize
+prompt_manager = HeliconePromptManager(api_key="sk-helicone-...")
+client = openai.OpenAI(api_key="sk-openai-...")
+
+# Step 1: Fetch the main prompt body
+main_prompt_body = prompt_manager.pull_prompt_body({
+    "prompt_id": "xyz789"
+})
+
+# Step 2: Extract all prompt partial references
+prompt_partials = prompt_manager.extract_prompt_partials(main_prompt_body)
+
+# Step 3: Fetch and resolve each prompt partial
+prompt_partial_inputs = {}
+
+for partial in prompt_partials:
+    # Fetch the referenced prompt's body
+    partial_body = prompt_manager.pull_prompt_body({
+        "prompt_id": partial.prompt_id,
+        "environment": partial.environment or "production"
+    })
+
+    # Extract the specific message content
+    substitution_value = prompt_manager.get_prompt_partial_substitution_value(
+        partial,
+        partial_body
+    )
+
+    # Map the template tag to its resolved content
+    prompt_partial_inputs[partial.raw] = substitution_value
+
+# Step 4: Merge the prompt with inputs and resolved partials
+result = prompt_manager.merge_prompt_body(
+    {
+        "prompt_id": "xyz789",
+        "model": "gpt-4o-mini",
+        "inputs": {
+            "user_name": "Alice"
+        }
+    },
+    main_prompt_body,
+    prompt_partial_inputs  # Pass resolved partials
+)
+
+if result["errors"]:
+    print("Validation errors:", result["errors"])
+
+# Step 5: Use the compiled prompt
+response = client.chat.completions.create(**result["body"])
+```
+
+**Prompt Partial Syntax:**
+- `{{hcp:abc123:0}}` - Message 0 from prompt abc123 (production environment)
+- `{{hcp:abc123:1:staging}}` - Message 1 from prompt abc123 (staging environment)
+- `{{hcp:xyz789:2:development}}` - Message 2 from prompt xyz789 (development environment)
+
+For more examples, see the [example.py](example.py) file in this repository.

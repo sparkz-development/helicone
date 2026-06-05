@@ -2,6 +2,8 @@ import { Client } from "pg";
 import { Result } from "@/packages/common/result";
 import { createClient as clickhouseCreateClient } from "@clickhouse/client";
 import dateFormat from "dateformat";
+import { logger } from "@/lib/telemetry/logger";
+import { SecretManager } from "@helicone-package/secrets/SecretManager";
 
 export function paramsToValues(params: (number | string | boolean | Date)[]) {
   return params
@@ -23,27 +25,46 @@ export function paramsToValues(params: (number | string | boolean | Date)[]) {
 
 export function printRunnableQuery(
   query: string,
-  parameters: (number | string | boolean | Date)[]
+  parameters: (number | string | boolean | Date)[],
 ) {
   const queryParams = paramsToValues(parameters);
   const setParams = Object.entries(queryParams)
     .map(([key, value]) => `SET param_${key} = '${value}';`)
     .join("\n");
 
-  console.log(`\n\n${setParams}\n\n${query}\n\n`);
+  logger.info({ setParams, query }, "Runnable query");
 }
 
 export async function dbQueryClickhouse<T>(
   query: string,
-  parameters: (number | string | boolean | Date)[]
+  parameters: (number | string | boolean | Date)[],
 ): Promise<Result<T[], string>> {
   try {
     const query_params = paramsToValues(parameters);
 
+    const getClickhouseHost = () => {
+      const clickhouseHost = SecretManager.getSecret("CLICKHOUSE_HOST");
+      if (clickhouseHost) {
+        return clickhouseHost;
+      }
+
+      // Use APP_URL to construct clickhouse host if not specified in env
+      const appUrl =
+        process.env.APP_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "http://localhost";
+      try {
+        const url = new URL(appUrl);
+        return `${url.protocol}//${url.hostname}:18123`;
+      } catch {
+        return "http://localhost:18123";
+      }
+    };
+
     const client = clickhouseCreateClient({
-      host: process.env.CLICKHOUSE_HOST ?? "http://localhost:18123",
-      username: process.env.CLICKHOUSE_USER ?? "default",
-      password: process.env.CLICKHOUSE_PASSWORD ?? "",
+      host: getClickhouseHost(),
+      username: SecretManager.getSecret("CLICKHOUSE_USER") ?? "default",
+      password: SecretManager.getSecret("CLICKHOUSE_PASSWORD") ?? "",
     });
 
     const queryResult = await client.query({
@@ -60,8 +81,7 @@ export async function dbQueryClickhouse<T>(
     });
     return { data: await queryResult.json<T[]>(), error: null };
   } catch (err) {
-    console.error("Error executing query: ", query, parameters);
-    console.error(err);
+    logger.error({ query, parameters, error: err }, "Error executing query");
     return {
       data: null,
       error: JSON.stringify(err),
@@ -77,18 +97,23 @@ export async function dbQueryClickhouse<T>(
  */
 export async function dbExecute<T>(
   query: string,
-  parameters: any[]
+  parameters: any[],
 ): Promise<Result<T[], string>> {
   const ssl =
     process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "development"
       ? {
           rejectUnauthorized: true,
-          ca: process.env.SUPABASE_SSL_CERT_CONTENTS!.split("\\n").join("\n"),
+          ca: SecretManager.getSecret("SUPABASE_SSL_CERT_CONTENTS")!
+            .split("\\n")
+            .join("\n"),
         }
       : undefined;
 
   const client = new Client({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: SecretManager.getSecret(
+      "DATABASE_URL",
+      "SUPABASE_DATABASE_URL",
+    ),
     ssl,
   });
   try {
@@ -101,8 +126,7 @@ export async function dbExecute<T>(
 
     return { data: result.rows, error: null };
   } catch (err) {
-    console.error("Error executing query: ", query, parameters);
-    console.error(err);
+    logger.error({ query, parameters, error: err }, "Error executing query");
     await client.end();
     return { data: null, error: JSON.stringify(err) };
   }
@@ -125,6 +149,15 @@ export function buildDynamicUpdateQuery(options: {
   };
 }): { query: string; params: any[] } {
   const { from, set, where } = options;
+
+  // Validate table and field names to prevent SQL injection
+  if (!/^[a-zA-Z0-9_]+$/.test(from)) {
+    throw new Error(`Invalid table name: ${from}`);
+  }
+  if (!/^[a-zA-Z0-9_]+$/.test(where.field)) {
+    throw new Error(`Invalid where field name: ${where.field}`);
+  }
+
   const queryParts: string[] = [];
   const params: any[] = [];
   let paramCounter = 1;

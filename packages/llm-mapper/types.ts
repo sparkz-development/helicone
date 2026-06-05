@@ -1,12 +1,17 @@
 import { ProviderName } from "../cost/providers/mappings";
+import { ModelProviderName } from "../cost/models/providers";
 
 export const DEFAULT_UUID = "00000000-0000-0000-0000-000000000000";
 
 export type MapperType =
+  | "ai-gateway-chat"
+  | "ai-gateway-responses"
   | "openai-chat"
   | "openai-response"
   | "anthropic-chat"
   | "gemini-chat"
+  | "llama-chat"
+  | "vercel-chat"
   | "black-forest-labs-image"
   | "openai-assistant"
   | "openai-image"
@@ -16,8 +21,10 @@ export type MapperType =
   | "openai-realtime"
   | "vector-db"
   | "tool"
+  | "data"
   | "unknown";
-export type Provider = ProviderName | "CUSTOM";
+// Legacy and AI Gateway type for Provider slugs
+export type Provider = ProviderName | "CUSTOM" | ModelProviderName;
 export type LlmType = "chat" | "completion";
 
 /* -------------------------------------------------------------------------- */
@@ -69,7 +76,8 @@ export interface LLMRequestBody {
   presence_penalty?: number | null;
   frequency_penalty?: number | null;
   stop?: string[] | string | null; // stop_sequences for Anthropic
-  reasoning_effort?: "low" | "medium" | "high" | null;
+  reasoning_effort?: "minimal" | "low" | "medium" | "high" | null;
+  verbosity?: "low" | "medium" | "high" | null; // for OpenAI (started in GPT 5)
 
   // Internal Tools
   tools?: Tool[];
@@ -83,6 +91,7 @@ export interface LLMRequestBody {
   // External Tools
   toolDetails?: HeliconeEventTool;
   vectorDBDetails?: HeliconeEventVectorDB;
+  dataDetails?: HeliconeEventData;
 
   // Embedding models
   input?: string | string[];
@@ -126,6 +135,17 @@ type LLMResponseBody = {
     };
     _type: "vector_db";
   };
+  dataDetailsResponse?: {
+    status: string;
+    message: string;
+    metadata: {
+      timestamp: string;
+      [key: string]: any;
+    };
+    _type: "data";
+    name: string;
+    [key: string]: any;
+  };
 };
 
 /* -------------------------------------------------------------------------- */
@@ -160,6 +180,13 @@ export type Message = {
   idx?: number; // Index of an auto prompt input message
   contentArray?: Message[];
   deleted?: boolean; // For realtime API (conversation.item.delete)
+  reasoning?: string; // For reasoning models
+  annotations?: Array<{
+    type: "url_citation";
+    url: string;
+    title: string;
+    content?: string;
+  }>; // For web search citations
 
   // For realtime API
   start_timestamp?: string; // For realtime API (creation)
@@ -198,10 +225,12 @@ export type Response = {
 /* -------------------------------------------------------------------------- */
 export interface Tool {
   name: string;
-  description: string;
+  description?: string;
   parameters?: Record<string, any>; // Strict JSON Schema type ("parameters" in OPENAI, "input_schema" in ANTHROPIC)
+  strict?: boolean; // OpenAI's strict mode for function calling
 }
 export interface FunctionCall {
+  id?: string;
   name: string;
   arguments: Record<string, any>;
 }
@@ -216,6 +245,9 @@ type HeliconeMetadata = {
   totalTokens: number | null;
   promptTokens: number | null;
   completionTokens: number | null;
+  reasoningTokens: number | null;
+  promptCacheWriteTokens: number | null;
+  promptCacheReadTokens: number | null;
   latency: number | null;
   user: string | null;
   status: {
@@ -234,6 +266,13 @@ type HeliconeMetadata = {
   provider: Provider;
   timeToFirstToken?: number | null;
   scores?: Record<string, { value: number; valueType: string } | number> | null;
+  gatewayRouterId?: string | null;
+  gatewayDeploymentTarget?: string | null;
+  promptId?: string | null;
+  promptVersion?: string | null;
+  targetUrl?: string | null;
+  requestReferrer?: string | null;
+  storageLocation?: string | null;
 };
 
 // UNORGANZIED
@@ -293,9 +332,16 @@ export interface HeliconeEventVectorDB {
   databaseName?: string;
   [key: string]: any;
 }
+export interface HeliconeEventData {
+  _type: "data";
+  name: string;
+  meta?: Record<string, any>;
+  [key: string]: any;
+}
 export type HeliconeCustomEventRequest =
   | HeliconeEventTool
-  | HeliconeEventVectorDB;
+  | HeliconeEventVectorDB
+  | HeliconeEventData;
 
 export type HeliconeLogRequest = ILogRequest | HeliconeCustomEventRequest;
 
@@ -323,9 +369,12 @@ export interface HeliconeRequest {
   prompt_cache_write_tokens: number | null;
   prompt_cache_read_tokens: number | null;
   completion_tokens: number | null;
+  reasoning_tokens: number | null;
   prompt_audio_tokens: number | null;
   completion_audio_tokens: number | null;
+  cost: number | null;
   prompt_id: string | null;
+  prompt_version: string | null;
   feedback_created_at?: string | null;
   feedback_id?: string | null;
   feedback_rating?: boolean | null;
@@ -342,4 +391,8 @@ export interface HeliconeRequest {
   model: string;
   cache_reference_id: string | null;
   cache_enabled: boolean;
+  updated_at?: string;
+  request_referrer?: string | null;
+  ai_gateway_body_mapping: string | null;
+  storage_location?: string;
 }

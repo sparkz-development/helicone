@@ -2,10 +2,20 @@ import { MappedLLMRequest } from "@helicone-package/llm-mapper/types";
 import { HandThumbDownIcon, HandThumbUpIcon } from "@heroicons/react/24/solid";
 import { ColumnDef } from "@tanstack/react-table";
 import { clsx } from "../../shared/clsx";
-import { getUSDateFromString } from "../../shared/utils/utils";
+import {
+  getUSDateFromString,
+  get24HourFromString,
+} from "../../shared/utils/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import CostPill from "./costPill";
 import { COUTNRY_CODE_DIRECTORY } from "./countryCodeDirectory";
 import ModelPill from "./modelPill";
+import ProviderPill from "./providerPill";
 import StatusBadge from "./statusBadge";
 import { DEFAULT_UUID } from "@helicone-package/llm-mapper/types";
 
@@ -31,11 +41,23 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     id: "createdAt",
     accessorKey: "createdAt",
     header: "Created At",
-    cell: (info) => (
-      <span className="text-gray-900 dark:text-gray-100 font-medium">
-        {getUSDateFromString(info.row.original.heliconeMetadata.createdAt)}
-      </span>
-    ),
+    cell: (info) => {
+      const value = info.row.original.heliconeMetadata.createdAt;
+      return (
+        <TooltipProvider>
+          <Tooltip delayDuration={100}>
+            <TooltipTrigger asChild>
+              <span className="cursor-default font-medium text-gray-900 dark:text-gray-100">
+                {getUSDateFromString(value)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              <p>{get24HourFromString(value)}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    },
     meta: {
       sortKey: "created_at",
     },
@@ -66,6 +88,16 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     size: 100,
   },
   {
+    id: "provider",
+    accessorKey: "provider",
+    header: "Provider",
+    cell: (info) => {
+      return (
+        <ProviderPill provider={info.row.original.heliconeMetadata.provider} />
+      );
+    },
+  },
+  {
     id: "requestText",
     accessorKey: "requestText",
     header: "Request",
@@ -73,6 +105,7 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     meta: {
       sortKey: "request_prompt",
     },
+    minSize: 400,
   },
   {
     id: "responseText",
@@ -82,12 +115,18 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     meta: {
       sortKey: "response_text",
     },
+    minSize: 400,
   },
   {
     id: "model",
     accessorKey: "model",
     header: "Model",
-    cell: (info) => <ModelPill model={info.row.original.model} />,
+    cell: (info) => (
+      <ModelPill
+        model={info.row.original.model}
+        provider={info.row.original.heliconeMetadata.provider}
+      />
+    ),
     meta: {
       sortKey: "body_model",
     },
@@ -123,12 +162,27 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     header: "Completion Tokens",
     cell: (info) => {
       const tokens = Number(
-        info.row.original.heliconeMetadata.completionTokens
+        info.row.original.heliconeMetadata.completionTokens,
       );
       return <span>{tokens >= 0 ? tokens : "not found"}</span>;
     },
     meta: {
       sortKey: "completion_tokens",
+    },
+    size: 175,
+  },
+  {
+    id: "reasoningTokens",
+    accessorKey: "reasoningTokens",
+    header: "Reasoning Tokens",
+    cell: (info) => {
+      const tokens = Number(
+        info.row.original.heliconeMetadata.reasoningTokens,
+      );
+      return <span>{tokens >= 0 ? tokens : "not found"}</span>;
+    },
+    meta: {
+      sortKey: "reasoning_tokens",
     },
     size: 175,
   },
@@ -150,6 +204,27 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     },
     meta: {
       sortKey: "latency",
+    },
+  },
+  {
+    id: "tfft",
+    accessorKey: "tfft",
+    header: "TFFT",
+    cell: (info) => {
+      const isCached =
+        info.row.original.heliconeMetadata.cacheReferenceId !== DEFAULT_UUID;
+      return (
+        <span>
+          {isCached
+            ? 0
+            : Number(info.row.original.heliconeMetadata.timeToFirstToken) /
+              1000}
+          s
+        </span>
+      );
+    },
+    meta: {
+      sortKey: "time_to_first_token",
     },
   },
   {
@@ -177,7 +252,7 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
       return <span>${formatNumber(num)}</span>;
     },
     meta: {
-      sortKey: "cost_usd",
+      sortKey: "cost",
     },
     size: 175,
   },
@@ -200,9 +275,9 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
       return (
         <span className={clsx(rating ? "text-green-500" : "text-red-500")}>
           {rating ? (
-            <HandThumbUpIcon className="h-5 w-5 inline" />
+            <HandThumbUpIcon className="inline h-5 w-5" />
           ) : (
-            <HandThumbDownIcon className="h-5 w-5 inline" />
+            <HandThumbDownIcon className="inline h-5 w-5" />
           )}
         </span>
       );
@@ -213,9 +288,7 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     accessorKey: "promptId",
     header: "Prompt ID",
     cell: (info) => {
-      const promptId = info.row.original.heliconeMetadata.customProperties?.[
-        "Helicone-Prompt-Id"
-      ] as string;
+      const promptId = info.row.original.heliconeMetadata.promptId;
       return <span>{promptId}</span>;
     },
   },
@@ -226,7 +299,7 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
     cell: (info) => {
       const countryCode = info.row.original.heliconeMetadata.countryCode;
       const country = COUTNRY_CODE_DIRECTORY.find(
-        (c) => c.isoCode === countryCode
+        (c) => c.isoCode === countryCode,
       );
 
       if (country === undefined) {
@@ -234,12 +307,34 @@ export const getInitialColumns = (): ColumnDef<MappedLLMRequest>[] => [
       }
 
       return (
-        <span className="text-gray-900 dark:text-gray-100 font-medium">
+        <span className="font-medium text-gray-900 dark:text-gray-100">
           {country.emojiFlag} {country.country} ({country.isoCode})
         </span>
       );
     },
     minSize: 200,
+  },
+  {
+    id: "promptCacheReadTokens",
+    accessorKey: "promptCacheReadTokens",
+    header: "Prompt Cache Read Tokens",
+    cell: (info) => {
+      const tokens = Number(
+        info.row.original.heliconeMetadata.promptCacheReadTokens,
+      );
+      return <span>{tokens >= 0 ? tokens : "not found"}</span>;
+    },
+  },
+  {
+    id: "promptCacheWriteTokens",
+    accessorKey: "promptCacheWriteTokens",
+    header: "Prompt Cache Write Tokens",
+    cell: (info) => {
+      const tokens = Number(
+        info.row.original.heliconeMetadata.promptCacheWriteTokens,
+      );
+      return <span>{tokens >= 0 ? tokens : "not found"}</span>;
+    },
   },
   {
     id: "cacheEnabled",

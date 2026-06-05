@@ -1,3 +1,5 @@
+import React from "react";
+
 import FoldedHeader from "@/components/shared/FoldedHeader";
 import {
   Select,
@@ -24,6 +26,7 @@ import { useGetRequests } from "../../../../services/hooks/requests";
 import { useSessions } from "../../../../services/hooks/sessions";
 import { Col } from "../../../layout/common/col";
 import ExportButton from "../../../shared/themed/table/exportButton";
+import LoadingAnimation from "../../../shared/loadingAnimation";
 import TreeView from "./Tree/TreeView";
 import TableFooter from "../../requests/tableFooter";
 
@@ -31,6 +34,7 @@ import { TagType } from "@/packages/common/sessions/tags";
 import Link from "next/link";
 import { SessionTag } from "../../feedback/sessionTag";
 import { FilterASTButton } from "@/filterAST/FilterASTButton";
+import { get24HourFromDate } from "@/components/shared/utils/utils";
 
 export const EMPTY_SESSION_NAME = "__unnamed_helicone_session__";
 
@@ -40,11 +44,11 @@ interface SessionContentProps {
   session_name: string;
   requests: ReturnType<typeof useGetRequests>;
   isLive: boolean;
-  setIsLive: (isLive: boolean) => void;
+  setIsLive: (_isLive: boolean) => void;
   currentPage: number;
   pageSize: number;
-  onPageChange: (newPage: number) => void;
-  onPageSizeChange: (newPageSize: number) => void;
+  onPageChange: (_newPage: number) => void;
+  onPageSizeChange: (_newPageSize: number) => void;
 }
 
 export const SessionContent: React.FC<SessionContentProps> = ({
@@ -60,9 +64,9 @@ export const SessionContent: React.FC<SessionContentProps> = ({
   const router = useRouter();
   const { initializeColorMap } = useColorMapStore();
 
-  const { _, requestId } = router.query;
+  const { requestId } = router.query;
   const [selectedRequestId, setSelectedRequestId] = useState<string>(
-    (requestId as string) || ""
+    (requestId as string) || "",
   );
 
   // SESSIONS DATA
@@ -71,7 +75,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
       start: getTimeIntervalAgo("3m"), // Use 3 months like in the page component
       end: new Date(),
     }),
-    []
+    [],
   );
 
   const { sessions: relatedSessions, isLoading: isLoadingSessions } =
@@ -83,7 +87,9 @@ export const SessionContent: React.FC<SessionContentProps> = ({
 
   // HANDLERS
   const handleSessionIdChange = (newSessionId: string) => {
-    router.push(`/sessions/${encodeURIComponent(newSessionId)}`);
+    router.push(
+      `/sessions/${session_name}/${encodeURIComponent(newSessionId)}`,
+    );
   };
   const handleRequestIdChange = (newRequestId: string) => {
     setSelectedRequestId(newRequestId);
@@ -93,7 +99,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
         query: { ...router.query, requestId: newRequestId },
       },
       undefined,
-      { shallow: true }
+      { shallow: true },
     );
   };
 
@@ -114,9 +120,9 @@ export const SessionContent: React.FC<SessionContentProps> = ({
         (acc, trace) =>
           acc +
           (parseInt(`${trace?.request?.heliconeMetadata?.promptTokens}`) || 0),
-        0
+        0,
       ),
-    [session.traces]
+    [session.traces],
   );
   const completionTokens = useMemo(
     () =>
@@ -125,13 +131,13 @@ export const SessionContent: React.FC<SessionContentProps> = ({
           acc +
           (parseInt(`${trace?.request?.heliconeMetadata?.completionTokens}`) ||
             0),
-        0
+        0,
       ),
-    [session.traces]
+    [session.traces],
   );
   const totalTokens = useMemo(
     () => promptTokens + completionTokens,
-    [promptTokens, completionTokens]
+    [promptTokens, completionTokens],
   );
   const avgLatency = useMemo(() => {
     if (!session || session.traces.length === 0) {
@@ -140,7 +146,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
     const totalLatency = session.traces.reduce(
       (acc, trace) =>
         acc + (trace.end_unix_timestamp_ms - trace.start_unix_timestamp_ms),
-      0
+      0,
     );
     return totalLatency / session.traces.length;
   }, [session]);
@@ -148,12 +154,12 @@ export const SessionContent: React.FC<SessionContentProps> = ({
     return [
       {
         label: "Start Time",
-        value: startTime ? startTime.toLocaleString() : "-",
+        value: startTime ? get24HourFromDate(startTime) : "-",
       },
-      { label: "End Time", value: endTime ? endTime.toLocaleString() : "-" },
+      { label: "End Time", value: endTime ? get24HourFromDate(endTime) : "-" },
       {
         label: "Cost",
-        value: `$${(session.session_cost_usd ?? 0).toFixed(4)}`,
+        value: `$${(session.session_cost ?? 0).toFixed(4)}`,
       },
       { label: "Avg Latency", value: `${avgLatency.toFixed(0)}ms` },
       { label: "Requests", value: session.traces.length.toString() },
@@ -162,7 +168,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
   }, [
     startTime,
     endTime,
-    session.session_cost_usd,
+    session.session_cost,
     avgLatency,
     session.traces.length,
     totalTokens,
@@ -180,12 +186,12 @@ export const SessionContent: React.FC<SessionContentProps> = ({
   }, [session.traces, initializeColorMap]);
 
   return (
-    <Col className="h-screen flex flex-col">
+    <Col className="flex h-screen flex-col">
       <FoldedHeader
         leftSection={
-          <div className="flex flex-row gap-4 items-center">
+          <div className="flex flex-row items-center gap-4">
             {/* Dynamic breadcrumb */}
-            <div className="flex flex-row gap-1 items-center">
+            <div className="flex flex-row items-center gap-1">
               <Link href="/sessions" className="no-underline">
                 <Small className="font-semibold">Sessions</Small>
               </Link>
@@ -209,7 +215,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
                   value={session_id}
                   onValueChange={handleSessionIdChange}
                 >
-                  <SelectTrigger className="w-[280px] h-8 shadow-sm">
+                  <SelectTrigger className="h-8 w-[280px] shadow-sm">
                     <SelectValue placeholder="Select Session ID" />
                   </SelectTrigger>
                   <SelectContent>
@@ -227,7 +233,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
 
             {/* Realtime session reconstruction warning) */}
             {containsRealtime && (
-              <div className="flex flex-row gap-2 items-center text-xs text-blue-500 font-semibold">
+              <div className="flex flex-row items-center gap-2 text-xs font-semibold text-blue-500">
                 <PiBroadcastBold className="h-4 w-4" />
                 Includes reconstructed realtime requests
               </div>
@@ -235,7 +241,7 @@ export const SessionContent: React.FC<SessionContentProps> = ({
           </div>
         }
         rightSection={
-          <div className="h-full flex flex-row gap-2 items-center">
+          <div className="flex h-full flex-row items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 {/* Export the original, raw request data */}
@@ -250,11 +256,11 @@ export const SessionContent: React.FC<SessionContentProps> = ({
           </div>
         }
         foldContent={
-          <div className="h-full flex flex-row items-center divide-x divide-border">
+          <div className="flex h-full flex-row items-center divide-x divide-border">
             {sessionStatsToDisplay.map((stat) => (
               <div
                 key={stat.label}
-                className="flex flex-row gap-1 items-center px-4"
+                className="flex flex-row items-center gap-1 px-4"
               >
                 <XSmall className="font-medium">{stat.label}</XSmall>
                 <Muted className="text-xs">{stat.value}</Muted>
@@ -265,12 +271,18 @@ export const SessionContent: React.FC<SessionContentProps> = ({
       />
 
       <div className="flex-1 overflow-auto">
-        <TreeView
-          selectedRequestId={selectedRequestId}
-          setSelectedRequestId={handleRequestIdChange}
-          session={session}
-          isOriginalRealtime={containsRealtime}
-        />
+        {requests.requests.isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <LoadingAnimation title="Loading session details..." />
+          </div>
+        ) : (
+          <TreeView
+            selectedRequestId={selectedRequestId}
+            setSelectedRequestId={handleRequestIdChange}
+            session={session}
+            isOriginalRealtime={containsRealtime}
+          />
+        )}
       </div>
 
       <TableFooter

@@ -14,6 +14,8 @@ import {
   getJawnClient,
 } from "../../lib/clients/jawn";
 import { ORG_ID_COOKIE_KEY } from "../../lib/constants";
+import { OnboardingState } from "./useOrgOnboarding";
+import { getAttributionForPostHog } from "@helicone-package/common";
 
 const useGetOrgMembers = (orgId: string) => {
   const { data, isLoading, refetch } = $JAWN_API.useQuery(
@@ -28,7 +30,7 @@ const useGetOrgMembers = (orgId: string) => {
     },
     {
       refetchOnWindowFocus: false,
-    }
+    },
   );
   return {
     data: data?.data || [],
@@ -44,7 +46,7 @@ const useGetOrgSlackIntegration = (orgId: string) => {
     {},
     {
       refetchOnWindowFocus: false,
-    }
+    },
   );
 };
 
@@ -55,7 +57,7 @@ const useGetOrgSlackChannels = (orgId: string) => {
     {},
     {
       refetchOnWindowFocus: false,
-    }
+    },
   );
 };
 
@@ -68,7 +70,7 @@ const useGetOrgOwner = (orgId: string) => {
     },
     {
       refetchOnWindowFocus: false,
-    }
+    },
   );
 };
 
@@ -82,7 +84,7 @@ const useGetOrg = (orgId: string) => {
     {
       refetchOnWindowFocus: false,
       retry: true,
-    }
+    },
   );
 };
 
@@ -116,7 +118,7 @@ const useGetOrgs = () => {
         });
         return response;
       },
-    }
+    },
   );
 
   return {
@@ -128,14 +130,23 @@ const useGetOrgs = () => {
 
 const identifyUserOrg = (
   org: Database["public"]["Tables"]["organization"]["Row"],
-  user: HeliconeUser
+  user: HeliconeUser,
 ) => {
   if (user) {
+    // Identify user
     posthog.identify(user.id, {
       name: user.user_metadata?.name,
       email: user.email,
     });
+
+    // Set attribution as $set_once (first-touch - won't overwrite existing values)
+    const attributionProps = getAttributionForPostHog({ omitUndefined: true });
+    if (Object.keys(attributionProps).length > 0) {
+      posthog.setPersonProperties({}, attributionProps);
+    }
   }
+
+  const orgOnboardingStatus = org.onboarding_status as unknown as OnboardingState;
 
   if (org) {
     posthog.group("organization", org.id, {
@@ -145,6 +156,8 @@ const identifyUserOrg = (
       organization_type: org.organization_type || "",
       date_joined: org.created_at || "",
       has_onboarded: org.has_onboarded || false,
+      has_integrated: orgOnboardingStatus?.hasIntegrated || false,
+      has_completed_quickstart: orgOnboardingStatus?.hasCompletedQuickstart || false,
     });
 
     if (user && env("NEXT_PUBLIC_IS_ON_PREM") !== "true") {
@@ -168,6 +181,36 @@ const identifyUserOrg = (
   }
 };
 
+const useAddOrgMemberMutation = () => {
+  const queryClient = useQueryClient();
+  const { setNotification } = useNotification();
+  
+  return $JAWN_API.useMutation("post", "/v1/organization/{organizationId}/add_member", {
+    onSuccess: (_data, variables) => {
+      setNotification("Member added successfully", "success");
+      
+      queryClient.invalidateQueries({
+        queryKey: ["get", "/v1/organization/{organizationId}/members", { params: { path: { organizationId: variables.params.path.organizationId } } }],
+      });
+      
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const queryKey = query.queryKey;
+          return (
+            queryKey.includes("/v1/organization") ||
+            queryKey.includes("organization") ||
+            queryKey.includes("Organizations")
+          );
+        },
+        refetchType: "all",
+      });
+    },
+    onError: (error) => {
+      setNotification("Failed to add member", "error");
+    },
+  });
+};
+
 export const useUpdateOrgMutation = () => {
   const queryClient = useQueryClient();
   const { user } = useHeliconeAuthClient();
@@ -179,19 +222,16 @@ export const useUpdateOrgMutation = () => {
       color,
       icon,
       variant,
-      orgProviderKey,
-      limits,
-      resellerId,
-      organizationType,
+      default_time_filter,
     }: {
       orgId: string;
       name: string;
       color: string;
       icon: string;
       variant: string;
+      default_time_filter?: string;
       orgProviderKey?: string;
       limits?: any;
-      resellerId?: string;
       organizationType?: string;
     }) => {
       const jawn = getJawnClient(orgId);
@@ -204,24 +244,23 @@ export const useUpdateOrgMutation = () => {
             color,
             icon,
             variant,
-            ...(variant === "reseller" && {
-              org_provider_key: orgProviderKey,
-              limits,
-              reseller_id: resellerId,
-              organization_type: organizationType,
-            }),
+            default_time_filter,
           },
-        }
+        },
       );
     },
     onSuccess: () => {
       setNotification("Organization updated", "success");
+      // Invalidate queries
       queryClient.invalidateQueries({
-        queryKey: ["Organizations", user?.id ?? ""],
-        refetchType: "all",
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["OrganizationsId"],
+        predicate: (query) => {
+          const queryKey = query.queryKey;
+          return (
+            queryKey.includes("/v1/organization") ||
+            queryKey.includes("organization") ||
+            queryKey.includes("Organizations")
+          );
+        },
         refetchType: "all",
       });
     },
@@ -234,7 +273,7 @@ const setOrgCookie = (orgId: string) => {
 
 const useOrgsContextManager = (): OrgContextValue => {
   const [selectedOrgId, setSelectedOrgId] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const { user } = useHeliconeAuthClient();
   const { data: orgs, refetch } = $JAWN_API.useQuery(
@@ -254,6 +293,12 @@ const useOrgsContextManager = (): OrgContextValue => {
         ) {
           return 1_000;
         }
+        // semantics are a little confusing here, but we distinguish
+        // onboarding (initial welcome), integration (first request), quickstart (steps)
+        const hasNotCompletedFullOnboarding = selectedOrgsData.state.data?.data?.some((org) => !org.onboarding_status?.hasCompletedQuickstart);
+        if (hasNotCompletedFullOnboarding) {
+          return 5_000;
+        }
         return false;
       },
       refetchIntervalInBackground: false,
@@ -271,7 +316,7 @@ const useOrgsContextManager = (): OrgContextValue => {
           return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
         });
       },
-    }
+    },
   );
 
   const demoOrg = orgs?.find((org) => org.tier === "demo");
@@ -284,7 +329,7 @@ const useOrgsContextManager = (): OrgContextValue => {
         ((demoOrg?.has_onboarded as any)?.demoDataSetup ?? false) === false,
       refetchOnWindowFocus: false,
       retry: false,
-    }
+    },
   );
   const org = useMemo(() => {
     if (orgs && orgs.length > 0) {
@@ -307,11 +352,6 @@ const useOrgsContextManager = (): OrgContextValue => {
   return {
     allOrgs: orgs ?? [],
     currentOrg: org ?? undefined,
-    isResellerOfCurrentCustomerOrg: !!(
-      org?.organization_type === "customer" &&
-      org.reseller_id &&
-      orgs?.find((x) => x.id === org.reseller_id)
-    ),
     setCurrentOrg: (orgId) => {
       setSelectedOrgId(orgId);
       refetch();
@@ -322,6 +362,7 @@ const useOrgsContextManager = (): OrgContextValue => {
 
 export {
   setOrgCookie,
+  useAddOrgMemberMutation,
   useGetOrg,
   useGetOrgMembers,
   useGetOrgOwner,

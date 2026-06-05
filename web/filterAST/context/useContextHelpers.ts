@@ -1,7 +1,8 @@
 import { FilterState } from "@/filterAST/store/filterStore";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
-import { DEFAULT_FILTER_EXPRESSION, FilterExpression } from "../filterAst";
+import { logger } from "@/lib/telemetry/logger";
+import { FilterExpression } from "@helicone-package/filters/types";
 import { StoreFilterType, useFilterCrud } from "../hooks/useFilterCrud";
 import useNotification from "@/components/shared/notification/useNotification";
 
@@ -39,7 +40,7 @@ export const useContextHelpers = ({
 
       return false;
     },
-    [filterCrud, filterStore, pathname, searchParams, router]
+    [filterCrud, filterStore, pathname, searchParams, router],
   );
 
   const clearFilter = useCallback(() => {
@@ -94,11 +95,11 @@ export const useContextHelpers = ({
    */
   const updateFilterById = async (
     filterId: string,
-    updates: Partial<StoreFilterType>
+    updates: Partial<StoreFilterType>,
   ) => {
     let filterToUpdate: StoreFilterType | undefined =
       filterCrud.savedFilters.find(
-        (filter: StoreFilterType) => filter.id === filterId
+        (filter: StoreFilterType) => filter.id === filterId,
       );
 
     if (!filterToUpdate) {
@@ -109,7 +110,12 @@ export const useContextHelpers = ({
           id: filterId,
         };
       } else {
-        console.error("Filter not found");
+        logger.error(
+          {
+            filterId,
+          },
+          "Filter not found",
+        );
         return;
       }
     }

@@ -20,7 +20,7 @@ const getUSDateShort = (value: string) => {
   return `${month} ${day}`;
 };
 
-const getUSDate = (date: Date) => {
+const getUSDate = (date: Date, includeTimeZone: boolean = false) => {
   const options: Intl.DateTimeFormatOptions = {
     year: "numeric",
     month: "long",
@@ -28,6 +28,7 @@ const getUSDate = (date: Date) => {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    timeZoneName: includeTimeZone ? "short" : undefined,
   };
 
   let formattedDate = date.toLocaleString("en-US", options);
@@ -39,9 +40,37 @@ const getUSDate = (date: Date) => {
   return formattedDate;
 };
 
-const getUSDateFromString = (value: string) => {
+const getUSDateFromString = (
+  value: string,
+  includeTimeZone: boolean = false,
+) => {
   const date = new Date(value);
-  return getUSDate(date);
+  return getUSDate(date, includeTimeZone);
+};
+
+const get24HourFromDate = (date: Date) => {
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  });
+};
+
+const get24HourFromString = (value: string) => {
+  const date = new Date(value);
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  });
 };
 
 const getUSDateMin = (value: string) => {
@@ -64,7 +93,7 @@ const capitalizeWords = (str: string) => {
 
   // map over each word and capitalize the first letter
   const capitalizedWords = words.map(
-    (word) => word.charAt(0).toUpperCase() + word.slice(1)
+    (word) => word.charAt(0).toUpperCase() + word.slice(1),
   );
 
   // join the capitalized words back into a single string
@@ -80,6 +109,8 @@ export {
   capitalizeWords,
   getUSDate,
   getUSDateFromString,
+  get24HourFromDate,
+  get24HourFromString,
   getUSDateMin,
   getUSDateShort,
   removeLeadingWhitespace,

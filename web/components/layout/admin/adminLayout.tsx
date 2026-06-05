@@ -1,8 +1,8 @@
 import { useRouter } from "next/router";
 import { useOrg } from "../org/organizationContext";
 import MetaData from "../public/authMetaData";
-import { H4 } from "@/components/ui/typography";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { logger } from "@/lib/telemetry/logger";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AdminSidebar } from "./adminSidebar";
 import { useState, useEffect } from "react";
 
@@ -20,7 +20,7 @@ export default function AdminLayout(props: { children: React.ReactNode }) {
 
   // Start with undefined to indicate "not loaded yet"
   const [sidebarOpen, setSidebarOpen] = useState<boolean | undefined>(
-    undefined
+    undefined,
   );
 
   // Load state from localStorage on mount (client-side only)
@@ -31,7 +31,7 @@ export default function AdminLayout(props: { children: React.ReactNode }) {
       // Set state based on localStorage, or default to true if not found
       setSidebarOpen(savedState === null ? true : savedState === "true");
     } catch (e) {
-      console.error("Error accessing localStorage:", e);
+      logger.error(e, "Error accessing localStorage");
       // Default to open if localStorage fails
       setSidebarOpen(true);
     }
@@ -45,7 +45,7 @@ export default function AdminLayout(props: { children: React.ReactNode }) {
       // Save to localStorage whenever it changes
       localStorage.setItem(SIDEBAR_STATE_KEY, String(open));
     } catch (e) {
-      console.error("Error saving to localStorage:", e);
+      logger.error(e, "Error saving to localStorage");
     }
   };
 
@@ -86,16 +86,8 @@ export default function AdminLayout(props: { children: React.ReactNode }) {
         <div className="flex h-screen w-full">
           <AdminSidebar />
 
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Top navigation bar - visible on all screens */}
-            <div className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b border-sidebar-border bg-sidebar-background px-4">
-              {/* Sidebar trigger - visible on all screens */}
-              <SidebarTrigger className="flex h-9 w-9 items-center justify-center rounded-md hover:bg-sidebar-accent transition-colors" />
-
-              <H4>{getPageName()}</H4>
-            </div>
-
-            <main className="flex-1 w-full bg-background p-6 overflow-auto">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <main className="w-full flex-1 overflow-auto bg-background">
               {children}
             </main>
           </div>

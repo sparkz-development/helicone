@@ -13,9 +13,17 @@ export class GoogleStreamBodyProcessor implements IBodyProcessor {
 
     const { responseBody } = parseInput;
 
-    const lines = responseBody
-      .split("\n")
-      .filter((line) => line.startsWith("data: "));
+    const lines = responseBody.split("\n").filter((line) => {
+      if (line.startsWith("data: ")) {
+        return true;
+      }
+      try {
+        JSON.parse(line);
+        return true;
+      } catch {
+        return false;
+      }
+    });
 
     const data = lines.reduce((acc: any[], line, index) => {
       try {
@@ -43,6 +51,8 @@ export class GoogleStreamBodyProcessor implements IBodyProcessor {
           totalTokens: usage.total_tokens,
           completionTokens: usage.completion_tokens,
           promptTokens: usage.prompt_tokens,
+          promptCacheWriteTokens: usage.promptCacheWriteTokens,
+          promptCacheReadTokens: usage.promptCacheReadTokens,
           heliconeCalculated: true,
         },
       });
@@ -86,10 +96,14 @@ function getUsage(streamedData: any[]): {
     }
     // Standard Google usage metadata format
     else if (lastData && lastData.usageMetadata) {
+      const promptTokens = lastData.usageMetadata.promptTokenCount ?? 0;
+      const cachedContentTokens =
+        lastData.usageMetadata.cachedContentTokenCount ?? 0;
       return {
         total_tokens: lastData.usageMetadata.totalTokenCount,
         completion_tokens: lastData.usageMetadata.candidatesTokenCount,
-        prompt_tokens: lastData.usageMetadata.promptTokenCount,
+        prompt_tokens: promptTokens - cachedContentTokens,
+        promptCacheReadTokens: cachedContentTokens,
       };
     } else {
       throw new Error("Usage metadata not found");

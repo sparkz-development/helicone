@@ -3,33 +3,31 @@ import { ReactElement, useEffect } from "react";
 import AuthLayout from "../components/layout/auth/authLayout";
 import RequestsPage from "../components/templates/requests/RequestsPage";
 import { SortDirection } from "../services/lib/sorts/requests/sorts";
+import { logger } from "@/lib/telemetry/logger";
 
 // Got this ugly hack from https://stackoverflow.com/questions/21926083/failed-to-execute-removechild-on-node
-const jsToRun = `
-if (typeof Node === 'function' && Node.prototype) {
-  const originalRemoveChild = Node.prototype.removeChild;
-  Node.prototype.removeChild = function(child) {
-    if (child.parentNode !== this) {
-      if (console) {
-        console.error('Cannot remove a child from a different parent', child, this);
+function applyGoogleTranslateFix() {
+  if (typeof Node === "function" && Node.prototype) {
+    const originalRemoveChild = Node.prototype.removeChild;
+    Node.prototype.removeChild = function (child: any) {
+      if (child.parentNode !== this) {
+        return child;
       }
-      return child;
-    }
-    return originalRemoveChild.apply(this, arguments);
-  }
+      return originalRemoveChild.apply(this, arguments as any);
+    };
 
-  const originalInsertBefore = Node.prototype.insertBefore;
-  Node.prototype.insertBefore = function(newNode, referenceNode) {
-    if (referenceNode && referenceNode.parentNode !== this) {
-      if (console) {
-        console.error('Cannot insert before a reference node from a different parent', referenceNode, this);
+    const originalInsertBefore = Node.prototype.insertBefore;
+    Node.prototype.insertBefore = function (
+      newNode: any,
+      referenceNode: any
+    ) {
+      if (referenceNode && referenceNode.parentNode !== this) {
+        return newNode;
       }
-      return newNode;
-    }
-    return originalInsertBefore.apply(this, arguments);
+      return originalInsertBefore.apply(this, arguments as any);
+    };
   }
 }
-`;
 
 interface RequestsV2Props {
   currentPage: number;
@@ -46,11 +44,11 @@ const RequestsV2 = (props: RequestsV2Props) => {
   const { currentPage, pageSize, sort, initialRequestId } = props;
 
   useEffect(() => {
-    var observer = new MutationObserver(function (event) {
+    var observer = new MutationObserver(function () {
       if (document.documentElement.className.match("translated")) {
-        eval(jsToRun);
+        applyGoogleTranslateFix();
       } else {
-        console.log("Page untranslate");
+        logger.info("Page untranslate");
       }
     });
 
@@ -82,7 +80,7 @@ RequestsV2.getLayout = function getLayout(page: ReactElement) {
 export default RequestsV2;
 
 export const getServerSideProps = async (
-  context: GetServerSidePropsContext
+  context: GetServerSidePropsContext,
 ) => {
   const {
     page,

@@ -1,9 +1,12 @@
 import { TemplateWithInputs } from "@helicone/prompts/dist/objectParser";
 import { Provider } from "../../..";
 import { Result } from "../../util/results";
+import { ModelProviderName } from "@helicone-package/cost/models/providers";
+import { BodyMappingType } from "@helicone-package/cost/models/types";
 
 export interface MessageProducer {
   sendMessage(msg: MessageData): Promise<Result<null, string>>;
+  setLowerPriority(): void;
 }
 
 export type HeliconeMeta = {
@@ -16,6 +19,22 @@ export type HeliconeMeta = {
   lytixKey?: string;
   lytixHost?: string;
   heliconeManualAccessKey?: string;
+  promptId?: string;
+  promptVersionId?: string;
+  promptInputs?: Record<string, any>;
+  promptEnvironment?: string;
+  stripeCustomerId?: string;
+
+  // AI Gateway metadata
+  isPassthroughBilling?: boolean;
+  gatewayProvider?: ModelProviderName;
+
+  gatewayModel?: string; // registry format
+  providerModelId?: string; // provider format
+  aiGatewayBodyMapping?: BodyMappingType; // body mapping type
+
+  // Free tier limit
+  freeLimitExceeded?: boolean;
 };
 export type MessageData = {
   id: string;
@@ -49,6 +68,7 @@ export type Log = {
     cacheBucketMaxSize?: number;
     cacheControl?: string;
     cacheReferenceId?: string;
+    requestReferrer?: string;
   };
   response: {
     id: string;
@@ -58,5 +78,16 @@ export type Log = {
     responseCreatedAt: Date;
     delayMs: number;
     cachedLatency?: number;
+    cost?: number;
+    // Token usage (extracted from response for cases where body isn't stored)
+    promptTokens?: number;
+    completionTokens?: number;
+    promptCacheReadTokens?: number;
+    promptCacheWriteTokens?: number;
+    promptAudioTokens?: number;
+    completionAudioTokens?: number;
+    reasoningTokens?: number;
+    // Model (extracted from response for cases where body isn't stored)
+    model?: string;
   };
 };
